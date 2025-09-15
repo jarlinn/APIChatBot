@@ -1,0 +1,177 @@
+version: '3.8'
+
+services:
+  # Aplicación FastAPI
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chatbot-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Base de datos
+      - DATABASE_URL=sqlite+aiosqlite:///./data/chatbot.db
+      
+      # JWT
+      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-me}
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      
+      # MinIO (conecta al servicio minio)
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET_NAME=chatbot-files
+      - MINIO_SECURE=false
+      
+      # Email (configurar según necesites)
+      - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      
+      # N8N Webhook (opcional)
+      - N8N_WEBHOOK=${N8N_WEBHOOK:-}
+      
+      # Configuración del servidor
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      # Persistir base de datos SQLite
+      - api_data:/app/data
+      # Opcional: logs
+      - ./logs:/app/logs
+    depends_on:
+      - minio
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MinIO para almacenamiento de archivos
+  minio:
+    image: minio/minio:latest
+    container_name: chatbot-minio
+    ports:
+      - "9000:9000"      # API port
+      - "9001:9001"      # Console port
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # PostgreSQL (opcional - descomenta si prefieres PostgreSQL sobre SQLite)
+  # db:
+  #   image: postgres:15-alpine
+  #   container_name: chatbot-db
+  #   environment:
+  #     - POSTGRES_DB=chatbot
+  #     - POSTGRES_USER=chatbot_user
+  #     - POSTGRES_PASSWORD=chatbot_password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - chatbot-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U chatbot_user -d chatbot"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # Redis (opcional - para cache y sesiones)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: chatbot-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - chatbot-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 3
+
+volumes:
+  minio_data:
+    driver: local
+  api_data:
+    driver: local
+  # postgres_data:
+  #   driver: local
+  # redis_data:
+  #   driver: local
+
+networks:
+  chatbot-network:
+    driver: bridge
+
+# =============================================================================
+# COMANDOS ÚTILES:
+# =============================================================================
+# 
+# Levantar todos los servicios:
+#   docker-compose up -d
+# 
+# Ver logs de la API:
+#   docker-compose logs -f api
+# 
+# Ver logs de MinIO:
+#   docker-compose logs -f minio
+# 
+# Reconstruir la imagen de la API:
+#   docker-compose build api
+# 
+# Parar todos los servicios:
+#   docker-compose down
+# 
+# Parar y eliminar volúmenes (CUIDADO - elimina datos):
+#   docker-compose down -v
+# 
+# Acceder al contenedor de la API:
+#   docker-compose exec api bash
+# 
+# Ejecutar migraciones:
+#   docker-compose exec api alembic upgrade head
+# 
+# =============================================================================
+# ACCESO A SERVICIOS:
+# =============================================================================
+# 
+# API FastAPI:
+#   - URL: http://localhost:8000
+#   - Docs: http://localhost:8000/docs
+#   - Health: http://localhost:8000/health
+# 
+# MinIO Console:
+#   - URL: http://localhost:9001
+#   - Usuario: minioadmin
+#   - Contraseña: minioadmin
+# 
+# MinIO API:
+#   - URL: http://localhost:9000
+# 
+# =============================================================================

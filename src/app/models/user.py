@@ -1,3 +1,7 @@
+"""
+Model for Users
+"""
+
 import uuid
 from sqlalchemy import Column, String, DateTime, Boolean
 from sqlalchemy.sql import func

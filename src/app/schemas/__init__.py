@@ -1,4 +1,7 @@
-# Pydantic schemas package
+"""
+Pydantic schemas package
+"""
+
 from .user import *
 from .question import *
 from .category import *

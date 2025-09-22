@@ -70,6 +70,22 @@ migrate: ## Ejecutar migraciones de base de datos
 	@echo "$(GREEN)🔄 Ejecutando migraciones...$(NC)"
 	docker-compose exec $(SERVICE_API) alembic upgrade head
 
+init-db: ## Inicializar base de datos con tablas y usuario por defecto
+	@echo "$(GREEN)🗄️ Inicializando base de datos...$(NC)"
+	docker-compose exec $(SERVICE_API) python src/app/db/init_db.py
+
+init-user: ## Crear usuario administrador por defecto
+	@echo "$(GREEN)👤 Creando usuario por defecto...$(NC)"
+	docker-compose exec $(SERVICE_API) python scripts/init_default_user.py
+
+init-db-local: ## Inicializar base de datos localmente
+	@echo "$(GREEN)🗄️ Inicializando base de datos localmente...$(NC)"
+	poetry run python src/app/db/init_db.py
+
+init-user-local: ## Crear usuario por defecto localmente
+	@echo "$(GREEN)👤 Creando usuario por defecto localmente...$(NC)"
+	poetry run python scripts/init_default_user.py
+
 shell: ## Acceder al shell del contenedor de la API
 	@echo "$(GREEN)🐚 Accediendo al contenedor...$(NC)"
 	docker-compose exec $(SERVICE_API) bash

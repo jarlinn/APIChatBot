@@ -10,8 +10,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Base de datos
-      - DATABASE_URL=sqlite+aiosqlite:///./data/chatbot.db
+      # Base de datos PostgreSQL con pgvector
+      - DATABASE_URL=postgresql+asyncpg://chatbot_user:chatbot_password@db:5432/chatbot_db
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=chatbot_user
+      - POSTGRES_PASSWORD=chatbot_password
+      - POSTGRES_DB=chatbot_db
+      - DB_POOL_SIZE=20
+      - DB_MAX_OVERFLOW=30
+      - DATABASE_ECHO=false
       
       # JWT
       - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-me}
@@ -35,15 +43,19 @@ services:
       # N8N Webhook (opcional)
       - N8N_WEBHOOK=${N8N_WEBHOOK:-}
       
+      # Configuración de embeddings
+      - EMBEDDING_DIMENSION=1536
+      - MAX_EMBEDDING_BATCH_SIZE=100
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      
       # Configuración del servidor
       - HOST=0.0.0.0
       - PORT=8000
     volumes:
-      # Persistir base de datos SQLite
-      - api_data:/app/data
       # Opcional: logs
       - ./logs:/app/logs
     depends_on:
+      - db
       - minio
     networks:
       - chatbot-network
@@ -77,26 +89,33 @@ services:
       timeout: 20s
       retries: 3
 
-  # PostgreSQL (opcional - descomenta si prefieres PostgreSQL sobre SQLite)
-  # db:
-  #   image: postgres:15-alpine
-  #   container_name: chatbot-db
-  #   environment:
-  #     - POSTGRES_DB=chatbot
-  #     - POSTGRES_USER=chatbot_user
-  #     - POSTGRES_PASSWORD=chatbot_password
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   ports:
-  #     - "5432:5432"
-  #   networks:
-  #     - chatbot-network
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U chatbot_user -d chatbot"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
+  # PostgreSQL con extensión pgvector
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: chatbot-db
+    environment:
+      - POSTGRES_DB=chatbot_db
+      - POSTGRES_USER=chatbot_user
+      - POSTGRES_PASSWORD=chatbot_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbot_user -d chatbot_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres 
+      -c shared_preload_libraries=vector
+      -c log_statement=all
+      -c log_destination=stderr
 
   # Redis (opcional - para cache y sesiones)
   # redis:
@@ -118,10 +137,8 @@ services:
 volumes:
   minio_data:
     driver: local
-  api_data:
+  postgres_data:
     driver: local
-  # postgres_data:
-  #   driver: local
   # redis_data:
   #   driver: local
 

@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy poetry files
-COPY pyproject.toml poetry.lock ./
+# Copy poetry files and README
+COPY pyproject.toml poetry.lock README.md ./
 
 # Install poetry and dependencies
 RUN pip install poetry && \

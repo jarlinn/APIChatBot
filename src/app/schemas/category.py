@@ -1,44 +1,58 @@
-from pydantic import BaseModel, Field, validator
+"""
+Schemas for Category
+"""
+
+from datetime import datetime
 from typing import Optional, List
-from enum import Enum
+
+from pydantic import BaseModel, Field
+
+
+class CategoryBase(BaseModel):
+    """Schema base for Category"""
+    name: str = Field(..., min_length=1, max_length=255, description="Name of the category")
+    slug: str = Field(..., min_length=1, max_length=255, description="Slug of the category")
+    description: Optional[str] = Field(None, description="Description of the category")
+    submodality_id: str = Field(..., description="ID of the parent submodality")
+
 
 class CategoryCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255, description="Nombre de la categoría")
-    slug: Optional[str] = Field(None, min_length=1, max_length=255, description="Slug único de la categoría (se genera automáticamente si no se proporciona)")
-    description: Optional[str] = Field(None, description="Descripción de la categoría")
-    parent_id: Optional[str] = Field(None, description="ID de la categoría padre")
-    is_active: Optional[bool] = Field(True, description="Si la categoría está activa")
+    """Schema for creating a category"""
+    name: str = Field(..., min_length=1, max_length=255, description="Name of the category")
+    description: Optional[str] = Field(None, description="Description of the category")
+    submodality_id: str = Field(..., description="ID of the parent submodality")
+
 
 class CategoryUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    slug: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
-    parent_id: Optional[str] = None
-    is_active: Optional[bool] = None
+    """Schema for updating a category"""
+    name: Optional[str] = Field(None, min_length=1, max_length=255, description="Name of the category")
+    description: Optional[str] = Field(None, description="Description of the category")
+    submodality_id: Optional[str] = Field(None, description="ID of the parent submodality")
 
-class CategoryResponse(BaseModel):
-    id: str
-    name: str
-    slug: str
-    description: Optional[str] = None
-    parent_id: Optional[str] = None
-    level: int
-    is_active: bool
-    full_path: str
-    display_name: str
-    children_count: Optional[int] = None
-    questions_count: Optional[int] = None
 
-class CategoryTree(BaseModel):
-    id: str
-    name: str
-    slug: str
-    description: Optional[str] = None
-    level: int
-    is_active: bool
-    full_path: str
-    children: List['CategoryTree'] = []
-    questions_count: int = 0
+class CategoryResponse(CategoryBase):
+    """Schema for category response"""
+    id: str = Field(..., description="Unique ID of the category")
+    created_at: datetime = Field(..., description="Creation date")
+    updated_at: Optional[datetime] = Field(None, description="Last update date")
 
-# Para evitar problemas de referencia circular
-CategoryTree.model_rebuild()
+    # Hierarchy information
+    submodality_name: Optional[str] = Field(None, description="Name of the submodality")
+    modality_name: Optional[str] = Field(None, description="Name of the modality")
+    full_name: str = Field(..., description="Full name with hierarchy")
+    full_path: str = Field(..., description="Full path")
+
+    # Statistics
+    total_questions: int = Field(0, description="Total number of questions")
+
+    class Config:
+        from_attributes = True
+
+
+class CategoryWithQuestions(CategoryResponse):
+    """Schema for category with its questions"""
+    questions: List["QuestionResponse"] = Field(default_factory=list, description="List of questions")
+
+# To avoid circular imports
+from .question import QuestionResponse
+CategoryWithQuestions.model_rebuild()

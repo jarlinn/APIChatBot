@@ -1,24 +1,31 @@
-# src/app/controllers/question.py
-from fastapi import (
-    APIRouter, HTTPException, UploadFile, File, Form, Query, Depends
-)
+"""
+Controllers for Questions
+"""
+
+import os
+import math
+from typing import Optional
+
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Depends
 from fastapi.responses import StreamingResponse
+
 from src.app.db.session import get_async_session
-from src.app.models import Question, Category
+from src.app.models import Question, Category, Modality, Submodality
 from src.app.schemas.question import (
-    QuestionResponse, 
-    QuestionApprovalRequest, 
+    QuestionResponse,
+    QuestionApprovalRequest,
     QuestionStatus,
     PaginatedQuestionResponse,
-    PaginationInfo
+    PaginationInfo,
+    SimilaritySearchRequest,
+    SimilaritySearchResponse,
+    SimilarChunkResponse,
 )
 from src.app.services.storage_service import storage_service
-import httpx
-import os
-from typing import Optional
-from sqlalchemy import select, func
-import math
-from sqlalchemy.orm import selectinload
+from src.app.services.embedding_service import embedding_service
+from src.app.services.gemini_service import gemini_service
 from src.app.dependencies.auth import get_current_active_user
 
 
@@ -27,26 +34,35 @@ router = APIRouter()
 N8N_WEBHOOK = os.getenv("N8N_WEBHOOK")
 
 
-def simulate_n8n_response(question_text: str, context_type: str, action: str = "create") -> str:
-    """Simular respuesta de N8N con model_response básico"""
-    import random
-    
-    # Asegurar que siempre tenemos texto válido
-    safe_question = question_text if question_text else "pregunta sin texto"
-    safe_context = context_type if context_type else "text"
-    safe_action = action if action else "procesamiento"
-    
-    responses = [
-        f"Basándome en la pregunta '{safe_question[:50]}...', he analizado el contexto de tipo {safe_context} y generado esta respuesta completa. El procesamiento se realizó exitosamente utilizando algoritmos avanzados de procesamiento de lenguaje natural, considerando todos los elementos contextuales disponibles para proporcionar la información más precisa y relevante posible.",
-        
-        f"Después de procesar la consulta '{safe_question[:40]}...', el sistema ha evaluado el contenido {safe_context} y ha determinado que la respuesta óptima incluye múltiples aspectos relevantes. Esta respuesta ha sido generada considerando patrones de datos similares, contexto histórico y mejores prácticas en el dominio específico de la pregunta planteada.",
-        
-        f"El análisis de la pregunta '{safe_question[:45]}...' con contexto {safe_context} ha resultado en una respuesta comprehensiva que aborda los puntos clave identificados. El modelo ha procesado la información disponible, aplicado técnicas de inferencia contextual y generado una respuesta que busca ser tanto informativa como práctica para el usuario que realizó la consulta.",
-        
-        f"Procesamiento completado para '{safe_question[:35]}...'. El sistema ha analizado el contexto de tipo {safe_context} y ha generado esta respuesta detallada que incorpora conocimiento relevante del dominio. La acción de {safe_action} se ejecutó correctamente, resultando en una respuesta que combina precisión técnica con claridad comunicativa para el usuario final."
-    ]
-    
-    return random.choice(responses)
+def build_question_response(question: Question) -> QuestionResponse:
+    """Helper to build QuestionResponse with full hierarchy information"""
+    return QuestionResponse(
+        question_id=str(question.id),
+        status=question.status,
+        question_text=question.question_text,
+        context_type=question.context_type,
+        context_text=question.context_text,
+        context_file=question.context_file,
+        # Flexible hierarchy fields (required modality, optional submodality/category)
+        modality_id=str(question.modality_id),
+        modality_name=question.modality.name if question.modality else None,
+        submodality_id=(
+            str(question.submodality_id) if question.submodality_id else None
+        ),
+        submodality_name=question.submodality.name if question.submodality else None,
+        category_id=str(question.category_id) if question.category_id else None,
+        category_name=question.category.name if question.category else None,
+        # Computed hierarchy fields
+        hierarchy_level=question.hierarchy_level,
+        full_name=question.full_name,
+        full_path=question.full_path,
+        model_response=question.model_response,
+        response_file=getattr(question, "response_file", None),
+        response_file_type=getattr(question, "response_file_type", None),
+        response_file_name=getattr(question, "response_file_name", None),
+        created_at=str(question.created_at),
+    )
+
 
 @router.post("/questions", response_model=QuestionResponse)
 async def create_question(
@@ -54,162 +70,211 @@ async def create_question(
     context_type: str = Form(...),
     context_text: Optional[str] = Form(None),
     context_file: Optional[UploadFile] = File(None),
-    category_id: str = Form(...),
-    current_user = Depends(get_current_active_user)
+    modality_id: str = Form(...),
+    submodality_id: Optional[str] = Form(None),
+    category_id: Optional[str] = Form(None),
+    current_user=Depends(get_current_active_user),
 ):
-    """Crear pregunta usando FormData (texto o archivo)"""
+    """Create question using FormData with flexible hierarchy (text or file)"""
     try:
-        # Validaciones
+        # Validations
         if context_type == "text" and not context_text:
             raise HTTPException(
                 status_code=400,
-                detail="context_text es requerido cuando context_type es 'text'"
+                detail="context_text is required when context_type is 'text'",
             )
 
         if context_type == "pdf" and not context_file:
             raise HTTPException(
                 status_code=400,
-                detail="context_file es requerido cuando context_type es 'pdf'"
+                detail="context_file is required when context_type is 'pdf'",
             )
 
         if context_file and context_file.content_type != "application/pdf":
-            raise HTTPException(
-                status_code=400,
-                detail="El archivo debe ser un PDF"
-            )
-        
-        # Validar consistencia entre context_type y context_file
+            raise HTTPException(status_code=400, detail="The file must be a PDF")
+
+        # Validate consistency between context_type and context_file
         if context_file and context_type != "pdf":
             raise HTTPException(
                 status_code=400,
-                detail="Si se proporciona un archivo, context_type debe ser 'pdf'"
+                detail="If a file is provided, context_type must be 'pdf'",
             )
-        
-        # Verificar si la categoría existe
-        category_name = None
+
+        # Validate flexible hierarchy
         async for session in get_async_session():
-            category = await session.get(Category, category_id)
-            if not category:
-                raise HTTPException(status_code=404, detail="Categoría no encontrada")
-            category_name = category.name
+            # Validate modality exists (required)
+            modality = await session.get(Modality, modality_id)
+            if not modality:
+                raise HTTPException(status_code=404, detail="Modality not found")
+
+            # Validate submodality if provided
+            submodality = None
+            if submodality_id:
+                submodality = await session.get(Submodality, submodality_id)
+                if not submodality:
+                    raise HTTPException(status_code=404, detail="Submodality not found")
+                # Validate submodality belongs to modality
+                if submodality.modality_id != modality_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Submodality does not belong to the specified modality",
+                    )
+
+            # Validate category if provided
+            category = None
+            if category_id:
+                category = await session.get(Category, category_id)
+                if not category:
+                    raise HTTPException(status_code=404, detail="Category not found")
+                # Validate category belongs to submodality (if submodality is specified)
+                if submodality_id and category.submodality_id != submodality_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Category does not belong to the specified submodality",
+                    )
+                # If no submodality specified but category exists, auto-set submodality
+                if not submodality_id:
+                    submodality_id = category.submodality_id
+                    submodality = await session.get(
+                        Submodality, category.submodality_id
+                    )
             break
-        
-        # Procesar archivo si se proporciona
+
+        # Process file if provided
         context_file_path = None
         if context_file:
-            # Guardar archivo en MinIO/S3
-            context_file_path = await storage_service.upload_file(
-                context_file, "pdfs"
-            )
-        
+            # Save file in MinIO/S3
+            context_file_path = await storage_service.upload_file(context_file, "pdfs")
+
         async for session in get_async_session():
             q = Question(
                 question_text=question_text,
                 context_text=context_text,
                 context_type=context_type,
                 context_file=context_file_path,
+                modality_id=modality_id,
+                submodality_id=submodality_id,
                 category_id=category_id,
-                status=QuestionStatus.PENDING.value
+                status=QuestionStatus.PENDING.value,
             )
             session.add(q)
             await session.commit()
             await session.refresh(q)
+
+            # Load relationships for response
+            await session.refresh(q, ["modality", "submodality", "category"])
             question_id = str(q.id)
 
-        # Procesar con N8N (simulado) y obtener model_response
-        model_response = None
-        if N8N_WEBHOOK:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                try:
-                    response = await client.post(N8N_WEBHOOK, json={
-                        "question_id": question_id,
-                        "question_text": question_text,
-                        "context_text": context_text,
-                        "context_type": context_type,
-                        "context_file": context_file_path,
-                        "category_id": category_id
-                    })
-                    # En un caso real, extraerías model_response de response.json()
-                    # model_response = response.json().get("model_response")
-                    model_response = simulate_n8n_response(question_text, context_type, "create")
-                except Exception as e:
-                    # log but we keep question created; n8n can be retried
-                    print("n8n webhook failed:", e)
-                    model_response = simulate_n8n_response(question_text, context_type, "create")
-        else:
-            # Simular respuesta cuando N8N no está configurado
-            model_response = simulate_n8n_response(question_text, context_type, "create")
-        
-        # Actualizar la pregunta con la respuesta del modelo
+        # Generate response with Gemini AI
+        print(
+            f"🤖 Generando respuesta con Gemini para pregunta: {question_text[:50]}..."
+        )
+        model_response = await gemini_service.generate_response(
+            question_text=question_text,
+            context_text=context_text,
+            context_type=context_type,
+            context_file_path=context_file_path,
+            action="create",
+        )
+        print(f"✅ Respuesta generada: {len(model_response)} caracteres")
+
+        # Update the question with the model response and generate embedding
         async for session in get_async_session():
             question = await session.get(Question, question_id)
-            if question and model_response:
-                question.model_response = model_response
-                await session.commit()
+            if question:
+                if model_response:
+                    question.model_response = model_response
+
+                # Generate embedding of the question text
+                try:
+                    await embedding_service.create_embedding_for_question_text(
+                        question_id=question_id,
+                        question_text=question_text,
+                        session=session,
+                    )
+                    print(f"✅ Embedding generado para pregunta {question_id}")
+                except Exception as e:
+                    # Log the error but don't fail the creation of the question
+                    print(
+                        f"❌ Error generando embedding para pregunta {question_id}: {e}"
+                    )
+                    import traceback
+
+                    traceback.print_exc()
+
+                # No make commit here because it's done in the embeddings service
             break
 
-        return QuestionResponse(
-            question_id=question_id,
-            status=QuestionStatus.PENDING.value,
-            question_text=question_text,
-            context_type=context_type,
-            context_text=context_text,
-            context_file=context_file_path,
-            category_id=category_id,
-            category_name=category_name,
-            model_response=model_response,
-            created_at=str(q.created_at)
-        )
+        # Get the question with all relationships for response
+        async for session in get_async_session():
+            result = await session.execute(
+                select(Question)
+                .where(Question.id == question_id)
+                .options(
+                    selectinload(Question.modality),
+                    selectinload(Question.submodality),
+                    selectinload(Question.category),
+                )
+            )
+            question_with_relations = result.scalar_one()
+            return build_question_response(question_with_relations)
     except Exception as e:
         print(f"Error in create_question: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Error interno del servidor: {str(e)}"
+            status_code=500, detail=f"Error interno del servidor: {str(e)}"
         )
+
 
 @router.get("/questions", response_model=PaginatedQuestionResponse)
 async def get_questions(
-    page: int = Query(1, ge=1, description="Número de página (empezando en 1)"),
-    page_size: int = Query(10, ge=1, le=100, description="Elementos por página (máximo 100)"),
-    category_id: Optional[str] = Query(
-        None, description="Filtrar por categoría (usar 'all' para mostrar todas)"
+    page: int = Query(1, ge=1, description="Number of page (starting at 1)"),
+    page_size: int = Query(
+        10, ge=1, le=100, description="Elements per page (maximum 100)"
     ),
-    context_type: Optional[str] = Query(
-        None, description="Filtrar por tipo de contexto"
+    modality_id: Optional[str] = Query(None, description="Filter by modality"),
+    submodality_id: Optional[str] = Query(None, description="Filter by submodality"),
+    category_id: Optional[str] = Query(None, description="Filter by category"),
+    context_type: Optional[str] = Query(None, description="Filter by context type"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (use 'all' to show all)"
     ),
-    status: Optional[str] = Query(None, description="Filtrar por estado (usar 'all' para mostrar todos)"),
-    search: Optional[str] = Query(
-        None, description="Buscar texto en preguntas"
-    ),
-    current_user = Depends(get_current_active_user)
+    search: Optional[str] = Query(None, description="Search in question text"),
+    current_user=Depends(get_current_active_user),
 ):
-    """Obtener lista paginada de preguntas con filtros opcionales"""
+    """Get paginated list of questions with optional filters"""
     async for session in get_async_session():
-        # Construir query base
+        # Load all relationships for flexible hierarchy
         query = select(Question).options(
-            selectinload(Question.category)
+            selectinload(Question.modality),
+            selectinload(Question.submodality),
+            selectinload(Question.category),
         )
-        
-        # Aplicar filtros
-        if category_id and category_id != "all":
+
+        # Flexible hierarchy filtering
+        if modality_id:
+            query = query.where(Question.modality_id == modality_id)
+        if submodality_id:
+            query = query.where(Question.submodality_id == submodality_id)
+        if category_id:
             query = query.where(Question.category_id == category_id)
-        
+
         if context_type:
             query = query.where(Question.context_type == context_type)
-        
+
         if status and status != "all":
             query = query.where(Question.status == status)
-        
+
         if search:
-            # Buscar en el texto de la pregunta y en el contexto de texto
             search_term = f"%{search}%"
-            query = query.where(
-                Question.question_text.ilike(search_term)
-            )
-        
-        # Contar total de elementos (sin paginación)
+            query = query.where(Question.question_text.ilike(search_term))
+
         count_query = select(func.count(Question.id))
-        if category_id and category_id != "all":
+        # Apply same filters to count query
+        if modality_id:
+            count_query = count_query.where(Question.modality_id == modality_id)
+        if submodality_id:
+            count_query = count_query.where(Question.submodality_id == submodality_id)
+        if category_id:
             count_query = count_query.where(Question.category_id == category_id)
         if context_type:
             count_query = count_query.where(Question.context_type == context_type)
@@ -217,87 +282,56 @@ async def get_questions(
             count_query = count_query.where(Question.status == status)
         if search:
             search_term = f"%{search}%"
-            count_query = count_query.where(
-                Question.question_text.ilike(search_term)
-            )
-        
+            count_query = count_query.where(Question.question_text.ilike(search_term))
+
         total_count_result = await session.execute(count_query)
         total_items = total_count_result.scalar()
-        
-        # Calcular paginación
+
         total_pages = math.ceil(total_items / page_size) if total_items > 0 else 1
         offset = (page - 1) * page_size
-        
-        # Aplicar paginación y ordenamiento
+
         query = query.order_by(Question.created_at.desc())
         query = query.offset(offset).limit(page_size)
-        
+
         result = await session.execute(query)
         questions = result.scalars().all()
-        
-        # Construir respuesta
+
         response_questions = []
         for q in questions:
-            response_questions.append(QuestionResponse(
-                question_id=str(q.id),
-                status=q.status,
-                question_text=q.question_text,
-                context_type=q.context_type,
-                context_text=q.context_text,
-                context_file=q.context_file,
-                category_id=q.category_id,
-                category_name=(
-                    q.category.name if q.category else None
-                ),
-                model_response=q.model_response,
-                created_at=str(q.created_at)
-            ))
-        
-        # Crear información de paginación
+            response_questions.append(build_question_response(q))
+
         pagination_info = PaginationInfo(
             page=page,
             page_size=page_size,
             total_items=total_items,
             total_pages=total_pages,
             has_next=page < total_pages,
-            has_previous=page > 1
-        )
-        
-        return PaginatedQuestionResponse(
-            items=response_questions,
-            pagination=pagination_info
+            has_previous=page > 1,
         )
 
+        return PaginatedQuestionResponse(
+            items=response_questions, pagination=pagination_info
+        )
+
+
 @router.get("/questions/{question_id}", response_model=QuestionResponse)
-async def get_question(
-    question_id: str,
-    current_user=Depends(get_current_active_user)
-):
-    """Obtener una pregunta específica por ID"""
+async def get_question(question_id: str, current_user=Depends(get_current_active_user)):
+    """Get a specific question by ID"""
     async for session in get_async_session():
         result = await session.execute(
             select(Question)
             .where(Question.id == question_id)
-            .options(selectinload(Question.category))
+            .options(
+                selectinload(Question.modality),
+                selectinload(Question.submodality),
+                selectinload(Question.category),
+            )
         )
         question = result.scalar_one_or_none()
         if not question:
-            raise HTTPException(status_code=404, detail="Pregunta no encontrada")
-        
-        return QuestionResponse(
-            question_id=str(question.id),
-            status=question.status,
-            question_text=question.question_text,
-            context_type=question.context_type,
-            context_text=question.context_text,
-            context_file=question.context_file,
-            category_id=question.category_id,
-            category_name=(
-                question.category.name if question.category else None
-            ),
-            model_response=question.model_response,
-            created_at=str(question.created_at)
-        )
+            raise HTTPException(status_code=404, detail="Question not found")
+
+        return build_question_response(question)
 
 
 @router.patch("/questions/{question_id}", response_model=QuestionResponse)
@@ -309,269 +343,244 @@ async def update_question(
     context_file: Optional[UploadFile] = File(None),
     category_id: Optional[str] = Form(None),
     model_response: Optional[str] = Form(None),
-    current_user = Depends(get_current_active_user)
+    current_user=Depends(get_current_active_user),
 ):
-    """Actualizar pregunta usando FormData (igual que crear)"""
+    """Update question using FormData (same as create)"""
     try:
         async for session in get_async_session():
             # Buscar la pregunta existente
             result = await session.execute(
                 select(Question)
                 .where(Question.id == question_id)
-                .options(selectinload(Question.category))
+                .options(
+                    selectinload(Question.modality),
+                    selectinload(Question.submodality),
+                    selectinload(Question.category),
+                )
             )
             question = result.scalar_one_or_none()
-            
+
             if not question:
-                raise HTTPException(status_code=404, detail="Pregunta no encontrada")
-            
-            # Guardar valores originales para comparar
+                raise HTTPException(status_code=404, detail="Question not found")
+
+            original_question_text = question.question_text
+            original_context_text = question.context_text
             original_context_type = question.context_type
+            original_context_file = question.context_file
             original_category_id = question.category_id
-            
-            # Actualizar campos si se proporcionaron
+
             if question_text is not None:
                 question.question_text = question_text
-            
+
             if context_type is not None:
-                # Validaciones igual que en POST
-                if context_type == "text" and not context_text and not question.context_text:
+                if (
+                    context_type == "text"
+                    and not context_text
+                    and not question.context_text
+                ):
                     raise HTTPException(
                         status_code=400,
-                        detail="context_text es requerido cuando context_type es 'text'"
+                        detail="context_text is required when context_type is 'text'",
                     )
-                
-                if context_type == "pdf" and not context_file and not question.context_file:
+
+                if (
+                    context_type == "pdf"
+                    and not context_file
+                    and not question.context_file
+                ):
                     raise HTTPException(
                         status_code=400,
-                        detail="context_file es requerido cuando context_type es 'pdf'"
+                        detail="context_file is required when context_type is 'pdf'",
                     )
-                
+
                 question.context_type = context_type
-            
+
             if context_text is not None:
                 question.context_text = context_text
-            
+
             if model_response is not None:
                 question.model_response = model_response
-            
-            # Validar consistencia entre context_type y context_file
+
             if context_file and context_type == "text":
                 raise HTTPException(
                     status_code=400,
-                    detail="No se puede subir archivo PDF con context_type 'text'"
+                    detail="Not possible to upload PDF file with context_type 'text'",
                 )
-            
+
             if context_type == "pdf" and not context_file and not question.context_file:
                 raise HTTPException(
                     status_code=400,
-                    detail="context_file es requerido cuando context_type es 'pdf'"
+                    detail="context_file is required when context_type is 'pdf'",
                 )
-            
-            # Procesar archivo si se proporciona
+
             if context_file:
                 if context_file.content_type != "application/pdf":
                     raise HTTPException(
-                        status_code=400,
-                        detail="El archivo debe ser un PDF"
+                        status_code=400, detail="The file must be a PDF"
                     )
-                
-                # Guardar nuevo archivo en MinIO/S3
+
                 context_file_path = await storage_service.upload_file(
                     context_file, "pdfs"
                 )
                 question.context_file = context_file_path
-                
-                # Si se sube un archivo, el tipo debe ser PDF
+
                 if context_type is None:
                     question.context_type = "pdf"
                 elif context_type != "pdf":
-                    # Forzar PDF si se sube archivo
                     question.context_type = "pdf"
-            
-            # Verificar y actualizar categoría
+
             if category_id is not None:
                 category = await session.get(Category, category_id)
                 if not category:
-                    raise HTTPException(status_code=404, detail="Categoría no encontrada")
+                    raise HTTPException(status_code=404, detail="Category not found")
                 question.category_id = category_id
-            
-            # Al actualizar una pregunta, vuelve a estado PENDING
+
             question.status = QuestionStatus.PENDING.value
-            
+
+            content_changed_for_regeneration = (
+                (
+                    question_text is not None
+                    and question.question_text != original_question_text
+                )
+                or (
+                    context_text is not None
+                    and question.context_text != original_context_text
+                )
+                or (context_file is not None)
+            )
+
+            original_model_response = question.model_response
+            model_response_manually_edited = (
+                model_response is not None and model_response != original_model_response
+            )
+
+            if content_changed_for_regeneration and not model_response_manually_edited:
+                print(
+                    f"🤖 Regenerating response with Gemini for question: {question.question_text[:50]}..."
+                )
+
+                try:
+                    new_model_response = await gemini_service.generate_response(
+                        question_text=question.question_text,
+                        context_text=question.context_text,
+                        context_type=question.context_type,
+                        context_file_path=question.context_file,
+                        action="update",
+                    )
+
+                    print(
+                        f"✅ New response generated: {len(new_model_response)} characters"
+                    )
+
+                    question.model_response = new_model_response
+
+                except Exception as e:
+                    print(f"❌ Error generating response with Gemini: {e}")
+                    if not question.model_response:
+                        question.model_response = f"Error generating response: {str(e)}"
+            else:
+                if model_response_manually_edited:
+                    question.model_response = model_response
+
+                if (
+                    question_text is not None
+                    and question.question_text != original_question_text
+                ):
+                    print(f"🔄 Regenerating embeddings for updated question...")
+                    try:
+                        await embedding_service.recreate_embedding_for_question_text(
+                            question_id=question_id,
+                            question_text=question.question_text,
+                            session=session,
+                        )
+                        print(f"✅ Embeddings regenerated for question {question_id}")
+                    except Exception as e:
+                        print(
+                            f"❌ Error regenerating embeddings for question {question_id}: {e}"
+                        )
+                        import traceback
+
+                        traceback.print_exc()
+
             await session.commit()
             await session.refresh(question)
-            
-            # Verificar si necesitamos disparar el webhook de N8N
-            should_trigger_n8n = (
-                (context_type is not None and context_type != original_context_type) or
-                (category_id is not None and category_id != original_category_id)
-            )
-            
-            # Disparar webhook de N8N si es necesario y generar nueva respuesta
-            if should_trigger_n8n:
-                new_model_response = None
-                if N8N_WEBHOOK:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        try:
-                            response = await client.post(N8N_WEBHOOK, json={
-                                "question_id": question_id,
-                                "question_text": question.question_text,
-                                "context_text": question.context_text,
-                                "context_type": question.context_type,
-                                "context_file": question.context_file,
-                                "category_id": question.category_id,
-                                "action": "update"
-                            })
-                            # En un caso real, extraerías model_response de response.json()
-                            new_model_response = simulate_n8n_response(question.question_text, question.context_type, "update")
-                        except Exception as e:
-                            # Log pero continuamos, N8N puede reintentarse
-                            print("n8n webhook failed on update:", e)
-                            new_model_response = simulate_n8n_response(question.question_text, question.context_type, "update")
-                else:
-                    # Simular respuesta cuando N8N no está configurado
-                    new_model_response = simulate_n8n_response(question.question_text, question.context_type, "update")
-                
-                # Solo actualizar model_response automáticamente si no se editó manualmente
-                if model_response is None and new_model_response:
-                    question.model_response = new_model_response
-            
-            return QuestionResponse(
-                question_id=str(question.id),
-                status=question.status,
-                question_text=question.question_text,
-                context_type=question.context_type,
-                context_text=question.context_text,
-                context_file=question.context_file,
-                category_id=question.category_id,
-                category_name=(
-                    question.category.name if question.category else None
-                ),
-                created_at=str(question.created_at)
-            )
-            
+
+            return build_question_response(question)
+
     except Exception as e:
         print(f"Error in update_question: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error interno del servidor: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post("/questions/{question_id}/recalculate", response_model=QuestionResponse)
 async def recalculate_question(
-    question_id: str,
-    current_user = Depends(get_current_active_user)
+    question_id: str, current_user=Depends(get_current_active_user)
 ):
-    """Recalcular una pregunta enviando sus datos actuales a N8N"""
+    """Recalculate a question sending its current data to N8N"""
     try:
         async for session in get_async_session():
-            # Buscar la pregunta existente
             result = await session.execute(
                 select(Question)
                 .where(Question.id == question_id)
-                .options(selectinload(Question.category))
+                .options(
+                    selectinload(Question.modality),
+                    selectinload(Question.submodality),
+                    selectinload(Question.category),
+                )
             )
             question = result.scalar_one_or_none()
-            
+
             if not question:
-                raise HTTPException(status_code=404, detail="Pregunta no encontrada")
-            
-            # Disparar webhook de N8N con los datos actuales y obtener nueva respuesta
-            new_model_response = None
-            if N8N_WEBHOOK:
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    try:
-                        response = await client.post(N8N_WEBHOOK, json={
-                            "question_id": question_id,
-                            "question_text": question.question_text,
-                            "context_text": question.context_text,
-                            "context_type": question.context_type,
-                            "context_file": question.context_file,
-                            "category_id": question.category_id,
-                            "action": "recalculate"
-                        })
-                        # En un caso real, extraerías model_response de response.json()
-                        new_model_response = simulate_n8n_response(question.question_text, question.context_type, "recalculate")
-                    except Exception as e:
-                        # Log pero continuamos
-                        print("n8n webhook failed on recalculate:", e)
-                        new_model_response = simulate_n8n_response(question.question_text, question.context_type, "recalculate")
-            else:
-                # Simular el procesamiento cuando N8N no está configurado
-                print(f"Simulando recálculo para pregunta {question_id}:")
-                print(f"  - question_text: {question.question_text}")
-                print(f"  - context_type: {question.context_type}")
-                print(f"  - category_id: {question.category_id}")
-                print(f"  - action: recalculate")
-                new_model_response = simulate_n8n_response(question.question_text, question.context_type, "recalculate")
-            
-            # Actualizar la pregunta con la nueva respuesta del modelo
-            # Asegurar que siempre tengamos una respuesta
-            if not new_model_response:
-                new_model_response = simulate_n8n_response(question.question_text, question.context_type, "recalculate")
-            
+                raise HTTPException(status_code=404, detail="Question not found")
+
+            print(f"🤖 Recalculating response with Gemini for question {question_id}:")
+            print(f"  - question_text: {question.question_text}")
+            print(f"  - context_type: {question.context_type}")
+            print(f"  - category_id: {question.category_id}")
+
+            new_model_response = await gemini_service.generate_response(
+                question_text=question.question_text,
+                context_text=question.context_text,
+                context_type=question.context_type,
+                context_file_path=question.context_file,
+                action="recalculate",
+            )
+            print(f"✅ Response recalculated: {len(new_model_response)} characters")
+
             question.model_response = new_model_response
-            # Al recalcular, vuelve a estado PENDING para revisión
             question.status = QuestionStatus.PENDING.value
             await session.commit()
             await session.refresh(question)
-            
-            return QuestionResponse(
-                question_id=str(question.id),
-                status=question.status,
-                question_text=question.question_text,
-                context_type=question.context_type,
-                context_text=question.context_text,
-                context_file=question.context_file,
-                category_id=question.category_id,
-                category_name=(
-                    question.category.name if question.category else None
-                ),
-                model_response=question.model_response,
-                created_at=str(question.created_at)
-            )
-            
+
+            return build_question_response(question)
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error in recalculate_question: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error interno del servidor: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/questions/{question_id}/file")
 async def get_context_file(
-    question_id: str,
-    current_user=Depends(get_current_active_user)
+    question_id: str, current_user=Depends(get_current_active_user)
 ):
-    """Endpoint para descargar el archivo de contexto de una pregunta"""
+    """Endpoint to download the context file of a question"""
     async for session in get_async_session():
         question = await session.get(Question, question_id)
         if not question:
-            raise HTTPException(status_code=404, detail="Pregunta no encontrada")
-        
+            raise HTTPException(status_code=404, detail="Question not found")
+
         if not question.context_file or question.context_type != "pdf":
             raise HTTPException(
-                status_code=404,
-                detail="No hay archivo PDF asociado a esta pregunta"
+                status_code=404, detail="No PDF file associated with this question"
             )
-        
-        # Verificar si el archivo existe en MinIO
+
         if not storage_service.file_exists(question.context_file):
-            raise HTTPException(
-                status_code=404,
-                detail="Archivo no encontrado en el servidor"
-            )
-        
-        # Obtener el stream del archivo desde MinIO
+            raise HTTPException(status_code=404, detail="File not found in the server")
+
         try:
-            file_stream = storage_service.get_file_stream(
-                question.context_file
-            )
+            file_stream = storage_service.get_file_stream(question.context_file)
 
             return StreamingResponse(
                 file_stream,
@@ -580,100 +589,172 @@ async def get_context_file(
                     "Content-Disposition": (
                         f"inline; filename=context_{question_id}.pdf"
                     )
-                }
+                },
             )
         except Exception as e:
             raise HTTPException(
-                status_code=500,
-                detail=f"Error al descargar archivo: {str(e)}"
+                status_code=500, detail=f"Error downloading file: {str(e)}"
             )
+
 
 @router.delete("/questions/{question_id}", response_model=QuestionResponse)
 async def delete_question(
-    question_id: str,
-    current_user=Depends(get_current_active_user)
+    question_id: str, current_user=Depends(get_current_active_user)
 ):
-    """Eliminar una pregunta (cambiar estado a DISABLED)"""
+    """Delete a question (change status to DISABLED)"""
     async for session in get_async_session():
-        # Buscar la pregunta
         result = await session.execute(
             select(Question)
             .where(Question.id == question_id)
-            .options(selectinload(Question.category))
+            .options(
+                selectinload(Question.modality),
+                selectinload(Question.submodality),
+                selectinload(Question.category),
+            )
         )
         question = result.scalar_one_or_none()
-        
+
         if not question:
             raise HTTPException(status_code=404, detail="Pregunta no encontrada")
-        
-        # Verificar que la pregunta no esté ya deshabilitada
+
         if question.status == QuestionStatus.DISABLED.value:
             raise HTTPException(
-                status_code=400, 
-                detail="La pregunta ya está deshabilitada"
+                status_code=400, detail="La pregunta ya está deshabilitada"
             )
-        
-        # Cambiar estado a DISABLED
+
         question.status = QuestionStatus.DISABLED.value
-        
+
         await session.commit()
         await session.refresh(question)
-        
-        return QuestionResponse(
-            question_id=str(question.id),
-            status=question.status,
-            question_text=question.question_text,
-            context_type=question.context_type,
-            context_text=question.context_text,
-            context_file=question.context_file,
-            category_id=question.category_id,
-            category_name=(
-                question.category.name if question.category else None
-            ),
-            model_response=question.model_response,
-            created_at=str(question.created_at)
-        )
+
+        return build_question_response(question)
 
 
 @router.patch("/questions/{question_id}/approval", response_model=QuestionResponse)
 async def update_question_approval(
     question_id: str,
     approval_request: QuestionApprovalRequest,
-    current_user=Depends(get_current_active_user)
+    current_user=Depends(get_current_active_user),
 ):
-    """Aprobar o deshabilitar una pregunta"""
+    """Approve or disable a question"""
     async for session in get_async_session():
-        # Buscar la pregunta
         result = await session.execute(
             select(Question)
             .where(Question.id == question_id)
-            .options(selectinload(Question.category))
+            .options(
+                selectinload(Question.modality),
+                selectinload(Question.submodality),
+                selectinload(Question.category),
+            )
         )
         question = result.scalar_one_or_none()
-        
+
         if not question:
-            raise HTTPException(status_code=404, detail="Pregunta no encontrada")
-        
-        # Actualizar el estado según la acción
+            raise HTTPException(status_code=404, detail="Question not found")
+
         if approval_request.action == "approve":
             question.status = QuestionStatus.APPROVED.value
         elif approval_request.action == "disable":
             question.status = QuestionStatus.DISABLED.value
-        
+
         await session.commit()
         await session.refresh(question)
-        
-        return QuestionResponse(
-            question_id=str(question.id),
-            status=question.status,
-            question_text=question.question_text,
-            context_type=question.context_type,
-            context_text=question.context_text,
-            context_file=question.context_file,
-            category_id=question.category_id,
-            category_name=(
-                question.category.name if question.category else None
-            ),
-            model_response=question.model_response,
-            created_at=str(question.created_at)
+
+        return build_question_response(question)
+
+
+@router.post("/search-similarity", response_model=SimilaritySearchResponse)
+async def search_similarity(
+    request: SimilaritySearchRequest,
+    session=Depends(get_async_session),
+    current_user=Depends(get_current_active_user),
+):
+    """
+    Search for similar questions in the database using vector embeddings.
+
+    This endpoint:
+    1. Recieves a question text
+    2. Generates a vector embedding using the all-MiniLM-L6-v2 model
+    3. Searches in the chunk_embeddings table using cosine similarity with pgvector
+    4. **IMPORTANT**: Only includes questions with status 'APPROVED'
+    5. Returns the similar questions found or a message indicating that there are no similarities
+
+    Security validations:
+    - Only questions with status 'APPROVED' are included in the results
+    - Questions with status 'PENDING' or 'DISABLED' are automatically excluded
+
+    Args:
+        request: Search data (text, similarity threshold, limit)
+        session: Database session
+        current_user: Authenticated user
+
+    Returns:
+        SimilaritySearchResponse: Result of the search with similar questions or message of no similarity
+    """
+    try:
+        if not request.question_text.strip():
+            raise HTTPException(
+                status_code=400, detail="The question text cannot be empty"
+            )
+
+        print(f"🔍 Searching for similarities for: '{request.question_text[:100]}...'")
+        print(
+            f"📊 Parameters: threshold={request.similarity_threshold}, limit={request.limit}"
+        )
+
+        similar_results = await embedding_service.search_by_text(
+            query_text=request.question_text,
+            limit=request.limit,
+            similarity_threshold=request.similarity_threshold,
+            session=session,
+        )
+
+        print(f"📈 Found {len(similar_results)} similar results")
+
+        if not similar_results:
+            return SimilaritySearchResponse(
+                query_text=request.question_text,
+                found_similarities=False,
+                message="No similar questions found with the specified similarity threshold.",
+                similar_chunks=[],
+                total_found=0,
+            )
+
+        similar_chunks = []
+        for chunk_embedding, similarity_score, question_data in similar_results:
+            similar_chunk = SimilarChunkResponse(
+                chunk_id=chunk_embedding.id,
+                question_id=chunk_embedding.question_id,
+                chunk_text=chunk_embedding.chunk_text,
+                similarity_score=round(similarity_score, 4),
+                chunk_index=chunk_embedding.chunk_index,
+                created_at=str(chunk_embedding.created_at),
+                question_text=question_data.get("question_text"),
+                model_response=question_data.get("model_response"),
+                question_status=question_data.get("status"),
+            )
+            similar_chunks.append(similar_chunk)
+
+        best_similarity = similar_chunks[0].similarity_score if similar_chunks else 0
+        message = f"Found {len(similar_chunks)} similar questions. The best similarity is {best_similarity:.2%}."
+
+        print(f"✅ Search completed successfully")
+
+        return SimilaritySearchResponse(
+            query_text=request.question_text,
+            found_similarities=True,
+            message=message,
+            similar_chunks=similar_chunks,
+            total_found=len(similar_chunks),
+        )
+
+    except Exception as e:
+        print(f"❌ Error in similarity search: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error internal server during similarity search: {str(e)}",
         )

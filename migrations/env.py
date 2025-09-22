@@ -1,20 +1,31 @@
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool, text
 from alembic import context
 import os
 import sys
+from dotenv import load_dotenv
+
+# Cargar variables de entorno
+load_dotenv()
 
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# Import your models here
+# Import your models here - IMPORTANTE: importar todos los modelos
 from src.app.db.database import Base
 from src.app.models.user import User
+from src.app.models.category import Category
+from src.app.models.question import Question
+from src.app.models.chunk_embedding import ChunkEmbedding
+from src.app.config import settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Configurar la URL de la base de datos dinámicamente
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", settings.postgresql_sync_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -49,6 +60,10 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        # Configuración específica para PostgreSQL
+        render_as_batch=False,
+        compare_type=True,
+        compare_server_default=True,
     )
 
     with context.begin_transaction():
@@ -69,8 +84,18 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # Ejecutar comandos de inicialización para PostgreSQL
+        if "postgresql" in str(connectable.url):
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            connection.commit()
+        
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, 
+            target_metadata=target_metadata,
+            # Configuración específica para PostgreSQL
+            render_as_batch=False,
+            compare_type=True,
+            compare_server_default=True,
         )
 
         with context.begin_transaction():

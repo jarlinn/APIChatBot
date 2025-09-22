@@ -1,4 +1,7 @@
-# src/app/services/profile_service.py
+"""
+Service for user profile management
+"""
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from fastapi import HTTPException
@@ -9,18 +12,18 @@ from src.app.utils.hashing import hash_password, verify_password
 
 
 class ProfileService:
-    """Servicio para gestión de perfil de usuario"""
+    """Service for user profile management"""
 
     async def get_user_profile(
         self, user_id: str, session: AsyncSession
     ) -> User:
-        """Obtiene el perfil de un usuario por ID"""
+        """Get user profile by ID"""
         query = await session.execute(select(User).filter_by(id=user_id))
         user = query.scalars().first()
 
         if not user:
             raise HTTPException(
-                status_code=404, detail="Usuario no encontrado"
+                status_code=404, detail="User not found"
             )
 
         return user
@@ -31,17 +34,16 @@ class ProfileService:
         update_data: UserProfileUpdate,
         session: AsyncSession
     ) -> User:
-        """Actualiza el perfil de un usuario"""
+        """Update user profile"""
         # Obtener el usuario actual
         query = await session.execute(select(User).filter_by(id=user_id))
         user = query.scalars().first()
 
         if not user:
             raise HTTPException(
-                status_code=404, detail="Usuario no encontrado"
+                status_code=404, detail="User not found"
             )
 
-        # Verificar si el nuevo email ya está en uso por otro usuario
         if update_data.email and update_data.email != user.email:
             email_query = await session.execute(
                 select(User).filter_by(email=update_data.email)
@@ -50,17 +52,15 @@ class ProfileService:
             if existing_user and existing_user.id != user_id:
                 raise HTTPException(
                     status_code=400,
-                    detail="El correo electrónico ya está en uso"
+                    detail="Email already in use"
                 )
 
-        # Actualizar campos si se proporcionan
         update_dict = update_data.dict(exclude_unset=True)
 
         for field, value in update_dict.items():
             if hasattr(user, field) and value is not None:
                 setattr(user, field, value)
 
-        # Guardar cambios
         await session.commit()
         await session.refresh(user)
 
@@ -72,30 +72,25 @@ class ProfileService:
         password_data: PasswordChangeRequest,
         session: AsyncSession
     ) -> bool:
-        """Cambia la contraseña de un usuario"""
-        # Obtener el usuario actual
+        """Change user password"""
         query = await session.execute(select(User).filter_by(id=user_id))
         user = query.scalars().first()
 
         if not user:
             raise HTTPException(
-                status_code=404, detail="Usuario no encontrado"
+                status_code=404, detail="User not found"
             )
 
-        # Verificar contraseña actual
         if not verify_password(password_data.current_password, user.hashed_password):
             raise HTTPException(
-                status_code=400, detail="La contraseña actual es incorrecta"
+                status_code=400, detail="Current password is incorrect"
             )
 
-        # Actualizar con la nueva contraseña
         user.hashed_password = hash_password(password_data.new_password)
 
-        # Guardar cambios
         await session.commit()
 
         return True
 
 
-# Instancia global del servicio
 profile_service = ProfileService()

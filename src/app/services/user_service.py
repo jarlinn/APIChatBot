@@ -1,9 +1,16 @@
+"""
+Service for user management
+"""
+
 from sqlalchemy.orm import Session
 from src.app.models.user import User
-from src.app.schemas.user import UserCreate, UserUpdate
+from src.app.schemas.user import UserCreate
 from src.app.utils.hashing import hash_password, verify_password
 
+
 class UserService:
+    """Service for user management"""
+
     @staticmethod
     def create_user(db: Session, user: UserCreate) -> User:
         """Create a new user"""

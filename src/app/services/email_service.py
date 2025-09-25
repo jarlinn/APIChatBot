@@ -12,6 +12,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from jinja2 import Environment, FileSystemLoader
 
+from src.app.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,14 +31,14 @@ class EmailService:
     """
 
     def __init__(self):
-        self.environment = os.getenv("ENVIRONMENT", "development")
+        self.environment = settings.environment
         self.is_development = self.environment == "development"
-        
-        self.provider = EmailProvider(os.getenv("EMAIL_PROVIDER", "console"))
-        
+
+        self.provider = EmailProvider(settings.email_provider)
+
         # Common configuration
-        self.from_name = os.getenv("EMAIL_FROM_NAME", "ChatBot UFPS")
-        self.frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        self.from_name = settings.email_from_name
+        self.frontend_url = settings.frontend_url
         
         # Provider-specific configuration
         self._smtp_config = self._get_smtp_config()
@@ -54,13 +56,11 @@ class EmailService:
         
         elif self.provider == EmailProvider.MAILTRAP:
             return {
-                "host": os.getenv("MAILTRAP_HOST", "sandbox.smtp.mailtrap.io"),
-                "port": int(os.getenv("MAILTRAP_PORT", "2525")),
-                "username": os.getenv("MAILTRAP_USERNAME"),
-                "password": os.getenv("MAILTRAP_PASSWORD"),
-                "from_email": os.getenv(
-                    "MAILTRAP_FROM_EMAIL", "noreply@chatbot.ufps.edu.co"
-                ),
+                "host": settings.mailtrap_host,
+                "port": settings.mailtrap_port,
+                "username": settings.mailtrap_username,
+                "password": settings.mailtrap_password,
+                "from_email": settings.mailtrap_from_email,
                 "use_tls": True
             }
         

@@ -1,5 +1,4 @@
 import asyncio
-import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from src.app.db.database import Base
@@ -11,11 +10,11 @@ from src.app.utils.hashing import hash_password
 async def create_default_user(session: AsyncSession):
     """Crea el usuario por defecto si no existe"""
     try:
-        # Obtener credenciales desde variables de entorno
-        default_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@chatbot.local")
-        default_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
-        default_name = os.getenv("DEFAULT_ADMIN_NAME", "Administrador")
-        default_role = os.getenv("DEFAULT_ADMIN_ROLE", "admin")
+        # Obtener credenciales desde configuración
+        default_email = settings.default_admin_email
+        default_password = settings.default_admin_password
+        default_name = settings.default_admin_name
+        default_role = settings.default_admin_role
 
         # Verificar si el usuario ya existe
         result = await session.execute(

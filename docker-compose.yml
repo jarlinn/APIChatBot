@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Aplicación FastAPI
   api:
@@ -20,9 +18,11 @@ services:
       - DB_POOL_SIZE=20
       - DB_MAX_OVERFLOW=30
       - DATABASE_ECHO=false
+
+      - GEMINI_API_KEY=
       
       # JWT
-      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-me}
+      - SECRET_KEY=a8f5f167f44f4964e6c998dee827110c
       - ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
       
@@ -33,12 +33,18 @@ services:
       - MINIO_BUCKET_NAME=chatbot-files
       - MINIO_SECURE=false
       
-      # Email (configurar según necesites)
-      - SMTP_SERVER=${SMTP_SERVER:-smtp.gmail.com}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USERNAME=${SMTP_USERNAME:-}
-      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
-      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      # Email configuration
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-console}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-ChatBot UFPS}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+
+      # Mailtrap (for development and production)
+      - MAILTRAP_HOST=${MAILTRAP_HOST:-sandbox.smtp.mailtrap.io}
+      - MAILTRAP_PORT=${MAILTRAP_PORT:-2525}
+      - MAILTRAP_USERNAME=${MAILTRAP_USERNAME:-}
+      - MAILTRAP_PASSWORD=${MAILTRAP_PASSWORD:-}
+      - MAILTRAP_FROM_EMAIL=${MAILTRAP_FROM_EMAIL:-noreply@chatbot.ufps.edu.co}
       
       # N8N Webhook (opcional)
       - N8N_WEBHOOK=${N8N_WEBHOOK:-}
@@ -51,9 +57,6 @@ services:
       # Configuración del servidor
       - HOST=0.0.0.0
       - PORT=8000
-    volumes:
-      # Opcional: logs
-      - ./logs:/app/logs
     depends_on:
       - db
       - minio
@@ -116,23 +119,6 @@ services:
       -c shared_preload_libraries=vector
       -c log_statement=all
       -c log_destination=stderr
-
-  # Redis (opcional - para cache y sesiones)
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: chatbot-redis
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
-  #   networks:
-  #     - chatbot-network
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 10s
-  #     timeout: 3s
-  #     retries: 3
 
 volumes:
   minio_data:

@@ -10,14 +10,14 @@ wait_for_service() {
     local host=$1
     local port=$2
     local service_name=$3
-    
+
     echo "⏳ Esperando a que $service_name esté disponible en $host:$port..."
-    
-    while ! nc -z "$host" "$port"; do
+
+    while ! curl -f --connect-timeout 1 "http://$host:$port" >/dev/null 2>&1; do
         echo "   $service_name no está listo, esperando..."
         sleep 2
     done
-    
+
     echo "✅ $service_name está disponible!"
 }
 
@@ -25,7 +25,12 @@ wait_for_service() {
 if [ -n "$MINIO_ENDPOINT" ] && [ "$MINIO_ENDPOINT" != "localhost:9000" ]; then
     MINIO_HOST=$(echo $MINIO_ENDPOINT | cut -d':' -f1)
     MINIO_PORT=$(echo $MINIO_ENDPOINT | cut -d':' -f2)
-    wait_for_service "$MINIO_HOST" "$MINIO_PORT" "MinIO"
+    echo "⏳ Esperando a que MinIO esté disponible en $MINIO_HOST:$MINIO_PORT..."
+    while ! curl -f --connect-timeout 5 "http://$MINIO_HOST:$MINIO_PORT/minio/health/live" >/dev/null 2>&1; do
+        echo "   MinIO no está listo, esperando..."
+        sleep 2
+    done
+    echo "✅ MinIO está disponible!"
 fi
 
 # Esperar a PostgreSQL si está configurado

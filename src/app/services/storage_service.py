@@ -11,18 +11,18 @@ from minio import Minio
 from minio.error import S3Error
 from fastapi import UploadFile, HTTPException
 
+from src.app.config import settings
+
 
 class StorageService:
     """Service for storage management"""
 
     def __init__(self):
-        self.minio_endpoint = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-        self.minio_access_key = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-        self.minio_secret_key = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-        self.minio_secure = (
-            os.getenv("MINIO_SECURE", "false").lower() == "true"
-        )
-        self.bucket_name = os.getenv("MINIO_BUCKET_NAME", "chatbot-files")
+        self.minio_endpoint = settings.minio_endpoint
+        self.minio_access_key = settings.minio_access_key
+        self.minio_secret_key = settings.minio_secret_key
+        self.minio_secure = settings.minio_secure
+        self.bucket_name = settings.minio_bucket_name
 
         self.client = Minio(
             self.minio_endpoint,

@@ -27,11 +27,12 @@ from src.app.services.storage_service import storage_service
 from src.app.services.embedding_service import embedding_service
 from src.app.services.gemini_service import gemini_service
 from src.app.dependencies.auth import get_current_active_user
+from src.app.config import settings
 
 
 router = APIRouter()
 
-N8N_WEBHOOK = os.getenv("N8N_WEBHOOK")
+N8N_WEBHOOK = settings.n8n_webhook
 
 
 def build_question_response(question: Question) -> QuestionResponse:
@@ -155,7 +156,7 @@ async def create_question(
                 modality_id=modality_id,
                 submodality_id=submodality_id,
                 category_id=category_id,
-                status=QuestionStatus.PENDING.value,
+                status=QuestionStatus.APPROVED.value,
             )
             session.add(q)
             await session.commit()
@@ -266,7 +267,11 @@ async def get_questions(
 
         if search:
             search_term = f"%{search}%"
-            query = query.where(Question.question_text.ilike(search_term))
+            query = query.where(
+                (Question.question_text.ilike(search_term)) |
+                (Question.model_response.ilike(search_term)) |
+                (Question.context_text.ilike(search_term))
+            )
 
         count_query = select(func.count(Question.id))
         # Apply same filters to count query
@@ -282,7 +287,11 @@ async def get_questions(
             count_query = count_query.where(Question.status == status)
         if search:
             search_term = f"%{search}%"
-            count_query = count_query.where(Question.question_text.ilike(search_term))
+            count_query = count_query.where(
+                (Question.question_text.ilike(search_term)) |
+                (Question.model_response.ilike(search_term)) |
+                (Question.context_text.ilike(search_term))
+            )
 
         total_count_result = await session.execute(count_query)
         total_items = total_count_result.scalar()
@@ -398,7 +407,7 @@ async def update_question(
             if context_text is not None:
                 question.context_text = context_text
 
-            if model_response is not None:
+            if model_response and model_response.strip():
                 question.model_response = model_response
 
             if context_file and context_type == "text":
@@ -429,7 +438,7 @@ async def update_question(
                 elif context_type != "pdf":
                     question.context_type = "pdf"
 
-            if category_id is not None:
+            if category_id and category_id not in ("", "null") and category_id.strip():
                 category = await session.get(Category, category_id)
                 if not category:
                     raise HTTPException(status_code=404, detail="Category not found")

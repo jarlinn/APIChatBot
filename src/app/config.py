@@ -37,16 +37,36 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
     
     # MinIO/S3
-    minio_endpoint: str = Field(env="MINIO_ENDPOINT")
-    minio_access_key: str = Field(env="MINIO_ACCESS_KEY")
-    minio_secret_key: str = Field(env="MINIO_SECRET_KEY")
-    minio_bucket_name: str = Field(env="MINIO_BUCKET_NAME")
+    minio_endpoint: str = Field(default="localhost:9000", env="MINIO_ENDPOINT")
+    minio_access_key: str = Field(default="minioadmin", env="MINIO_ACCESS_KEY")
+    minio_secret_key: str = Field(default="minioadmin", env="MINIO_SECRET_KEY")
+    minio_bucket_name: str = Field(default="chatbot-files", env="MINIO_BUCKET_NAME")
     minio_secure: bool = Field(default=False, env="MINIO_SECURE")
 
     
     # N8N
     n8n_webhook: Optional[str] = Field(default=None, env="N8N_WEBHOOK")
-    
+
+    # Gemini
+    gemini_api_key: Optional[str] = Field(default=None, env="GEMINI_API_KEY")
+
+    # Email
+    environment: str = Field(default="development", env="ENVIRONMENT")
+    email_provider: str = Field(default="console", env="EMAIL_PROVIDER")
+    email_from_name: str = Field(default="ChatBot UFPS", env="EMAIL_FROM_NAME")
+    frontend_url: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
+    mailtrap_host: str = Field(default="sandbox.smtp.mailtrap.io", env="MAILTRAP_HOST")
+    mailtrap_port: int = Field(default=2525, env="MAILTRAP_PORT")
+    mailtrap_username: str = Field(env="MAILTRAP_USERNAME")
+    mailtrap_password: str = Field(env="MAILTRAP_PASSWORD")
+    mailtrap_from_email: str = Field(default="noreply@chatbot.ufps.edu.co", env="MAILTRAP_FROM_EMAIL")
+
+    # Default Admin
+    default_admin_email: str = Field(default="admin@chatbot.local", env="DEFAULT_ADMIN_EMAIL")
+    default_admin_password: str = Field(default="admin123", env="DEFAULT_ADMIN_PASSWORD")
+    default_admin_name: str = Field(default="Administrador", env="DEFAULT_ADMIN_NAME")
+    default_admin_role: str = Field(default="admin", env="DEFAULT_ADMIN_ROLE")
+
     # Configuración de embeddings
     embedding_dimension: int = Field(default=384, env="EMBEDDING_DIMENSION")  # all-MiniLM-L6-v2
     max_embedding_batch_size: int = Field(default=100, env="MAX_EMBEDDING_BATCH_SIZE")

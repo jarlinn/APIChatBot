@@ -10,13 +10,14 @@ from typing import Optional
 import google.generativeai as genai
 
 from .storage_service import storage_service
+from src.app.config import settings
 
 
 class GeminiService:
     """Service for integration with Google Gemini AI"""
 
     def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
+        self.api_key = settings.gemini_api_key
         if not self.api_key:
             print("⚠️  GEMINI_API_KEY is not configured. Using simulated responses.")
             self.model = None

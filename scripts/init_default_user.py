@@ -5,7 +5,6 @@ base de datos. Valida si el usuario ya existe antes de crearlo.
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -117,11 +116,11 @@ async def main():
     """Función principal del script"""
     print("🚀 Iniciando creación de usuario por defecto...")
 
-    # Obtener credenciales del usuario por defecto desde variables de entorno
-    default_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@example.com")
-    default_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
-    default_name = os.getenv("DEFAULT_ADMIN_NAME", "Administrador")
-    default_role = os.getenv("DEFAULT_ADMIN_ROLE", "admin")
+    # Obtener credenciales del usuario por defecto desde configuración
+    default_email = settings.default_admin_email
+    default_password = settings.default_admin_password
+    default_name = settings.default_admin_name
+    default_role = settings.default_admin_role
 
     print("📋 Configuración del usuario por defecto:")
     print(f"   📧 Email: {default_email}")

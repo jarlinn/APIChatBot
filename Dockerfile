@@ -6,21 +6,30 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     curl \
+    netcat-openbsd \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy poetry files and README
 COPY pyproject.toml poetry.lock README.md ./
 
-# Install poetry and dependencies
-RUN pip install poetry && \
-    poetry config virtualenvs.create false && \
-    poetry install --only=main
-
-# Copy application code
+# Copy application code (needed for poetry install)
 COPY src/ ./src/
 COPY alembic.ini ./
 COPY migrations/ ./migrations/
+
+# Install poetry and dependencies
+RUN pip install poetry && \
+    poetry config virtualenvs.create false && \
+    poetry install --only=main --no-root
+
+# Copy remaining files
 COPY docker-entrypoint.sh ./
+
+# Debug: Verify files were copied correctly
+RUN echo "Contents of /app:" && ls -la /app/ && \
+    echo "Contents of /app/src:" && ls -la /app/src/ && \
+    echo "Contents of /app/src/app:" && ls -la /app/src/app/ || true
 
 # Create directories for data and logs
 RUN mkdir -p /app/data /app/logs

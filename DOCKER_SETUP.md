@@ -215,7 +215,6 @@ chatbot-api (Proyecto)
 ├── api: Servicio principal FastAPI
 ├── db: Base de datos PostgreSQL con pgvector
 ├── minio: Almacenamiento de objetos
-└── redis: Cache (comentado, opcional)
 ```
 
 ## Notas Adicionales

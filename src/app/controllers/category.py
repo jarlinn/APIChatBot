@@ -113,6 +113,19 @@ async def create_category(
         if not submodality:
             raise HTTPException(status_code=404, detail="Submodality not found")
 
+        # Check if category with same name already exists for this submodality
+        existing_name = await session.execute(
+            select(Category).where(
+                Category.submodality_id == category_data.submodality_id,
+                Category.name == category_data.name,
+            )
+        )
+        if existing_name.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409,
+                detail="Ya existe una categoría con ese nombre en esta submodalidad"
+            )
+
         base_slug = generate_slug(category_data.name)
         slug = base_slug
 
@@ -188,13 +201,26 @@ async def update_category(
                 raise HTTPException(status_code=404, detail="Submodality not found")
 
         if category_data.name is not None:
-            category.name = category_data.name
-            base_slug = generate_slug(category_data.name)
-            slug = base_slug
-
+            # Check if another category with same name exists for this submodality
             submodality_id_to_check = (
                 category_data.submodality_id or category.submodality_id
             )
+            existing_name = await session.execute(
+                select(Category).where(
+                    Category.submodality_id == submodality_id_to_check,
+                    Category.name == category_data.name,
+                    Category.id != category_id,
+                )
+            )
+            if existing_name.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Ya existe otra categoría con ese nombre en esta submodalidad"
+                )
+
+            category.name = category_data.name
+            base_slug = generate_slug(category_data.name)
+            slug = base_slug
 
             counter = 1
             while True:

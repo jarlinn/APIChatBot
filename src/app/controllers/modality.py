@@ -113,6 +113,16 @@ async def create_modality(
 ):
     """Create a new modality"""
     async for session in get_async_session():
+        # Check if modality with same name already exists
+        existing_name = await session.execute(
+            select(Modality).where(Modality.name == modality_data.name)
+        )
+        if existing_name.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409,
+                detail="Ya existe una modalidad con ese nombre"
+            )
+
         base_slug = generate_slug(modality_data.name)
         slug = base_slug
 
@@ -172,6 +182,18 @@ async def update_modality(
             raise HTTPException(status_code=404, detail="Modality not found")
 
         if modality_data.name is not None:
+            # Check if another modality with same name already exists
+            existing_name = await session.execute(
+                select(Modality).where(
+                    Modality.name == modality_data.name, Modality.id != modality_id
+                )
+            )
+            if existing_name.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Ya existe otra modalidad con ese nombre"
+                )
+
             modality.name = modality_data.name
             base_slug = generate_slug(modality_data.name)
             slug = base_slug

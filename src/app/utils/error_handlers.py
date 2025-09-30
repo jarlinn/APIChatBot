@@ -1,61 +1,86 @@
 """
-Manejadores de errores personalizados para respuestas más amigables
+Custom error handlers for friendlier responses
 """
+
+import logging
+import re
+from datetime import datetime
+from typing import Optional
 
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
-import logging
+
+from src.app.schemas.error import (
+    ErrorResponse, 
+    ValidationErrorResponse, 
+    ValidationErrorDetail, 
+    CustomHTTPException, 
+    ErrorDetail
+)
 
 logger = logging.getLogger(__name__)
 
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+def validate_email_format(email: str) -> tuple[bool, str]:
     """
-    Manejador personalizado para errores de validación de Pydantic
-    Convierte los errores técnicos en mensajes amigables para el usuario
+    Validate email format and return (is_valid, error_message)
     """
-    
-    errors = []
-    
+    if not email or not isinstance(email, str):
+        return False, "El email es requerido"
+
+    email = email.strip()
+
+    # Basic regex for email validation (RFC 5322 compliant)
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+    if not re.match(email_regex, email):
+        return False, "El formato del email no es válido. Debe ser algo como: usuario@dominio.com"
+
+    # Check for problematic domains
+    domain = email.split('@')[1].lower()
+    if domain in ['localhost', 'example.com', 'test.com'] or domain.endswith('.local'):
+        return False, f"El dominio '{domain}' no es válido. Usa un dominio real como gmail.com, outlook.com, etc."
+
+    return True, ""
+
+
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """
+    Pydantic's custom validation error handler
+    Turns technical errors into user-friendly messages
+    """
+
+    validation_errors = []
+
     for error in exc.errors():
         field = error.get("loc", [])[-1] if error.get("loc") else "campo"
         error_type = error.get("type", "")
         error_msg = error.get("msg", "")
         input_value = error.get("input", "")
-        
-        # Mensajes personalizados según el tipo de error
+
         if "email" in str(field).lower():
-            if "value_error" in error_type or "email" in error_type:
-                # Mensajes específicos para emails inválidos
-                if ".local" in str(input_value):
-                    friendly_msg = f"El dominio '.local' no es válido. Usa un dominio real como gmail.com, outlook.com, etc."
-                elif ".localhost" in str(input_value):
-                    friendly_msg = f"El dominio '.localhost' no es válido. Usa un dominio real como gmail.com, outlook.com, etc."
-                elif "@" not in str(input_value):
-                    friendly_msg = "El email debe contener el símbolo '@'"
-                elif "." not in str(input_value).split("@")[-1]:
-                    friendly_msg = "El dominio debe contener al menos un punto (ej: gmail.com)"
-                else:
-                    friendly_msg = f"El email '{input_value}' no tiene un formato válido. Debe ser algo como: usuario@dominio.com"
-            elif "missing" in error_type:
+            if "missing" in error_type:
                 friendly_msg = "El email es requerido"
+            elif "value_error" in error_type or "email" in error_type:
+                # Use proper email validation
+                is_valid, validation_msg = validate_email_format(str(input_value))
+                if not is_valid:
+                    friendly_msg = validation_msg
+                else:
+                    friendly_msg = "El formato del email no es válido"
             else:
                 friendly_msg = f"Error en el email: {error_msg}"
-        
+
         elif "password" in str(field).lower():
             if "missing" in error_type:
                 friendly_msg = "La contraseña es requerida"
-            elif "too_short" in error_type or "6 caracteres" in error_msg:
-                friendly_msg = "La contraseña debe tener al menos 6 caracteres"
-            elif "value_error" in error_type and "caracteres" in error_msg:
+            elif "too_short" in error_type or ("string_too_short" in error_type and "6" in error_msg):
                 friendly_msg = "La contraseña debe tener al menos 6 caracteres"
             else:
-                # Limpiar el mensaje de error técnico
-                clean_msg = error_msg.replace("Value error, ", "").replace("value error: ", "")
-                friendly_msg = clean_msg
-        
+                # For other password errors, provide a generic message
+                friendly_msg = "La contraseña no cumple con los requisitos de seguridad"
+
         else:
             # Para otros campos, usar mensaje genérico mejorado
             if "missing" in error_type:
@@ -64,33 +89,36 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                 friendly_msg = f"El campo '{field}' tiene un tipo de dato incorrecto"
             else:
                 friendly_msg = error_msg
-        
-        errors.append({
-            "campo": field,
-            "mensaje": friendly_msg,
-            "valor_recibido": input_value if input_value else None
-        })
-    
-    # Log del error para debugging
-    logger.warning(f"Error de validación en {request.url}: {errors}")
-    
+
+        validation_errors.append(ValidationErrorDetail(
+            field=field,
+            message=friendly_msg,
+            input_value=input_value if input_value else None
+        ))
+
+    logger.warning(f"Error de validación en {request.url}: {[e.dict() for e in validation_errors]}")
+
+    response = ValidationErrorResponse(
+        error=ErrorDetail(
+            code="VALIDATION_ERROR",
+            message="Datos de entrada inválidos. Por favor revisa los siguientes campos.",
+            details={}
+        ),
+        timestamp=datetime.utcnow().isoformat() + 'Z',
+        validation_errors=validation_errors
+    )
+
     return JSONResponse(
         status_code=422,
-        content={
-            "error": "Datos de entrada inválidos",
-            "mensaje": "Por favor revisa los siguientes campos:",
-            "detalles": errors,
-            "codigo": "VALIDATION_ERROR"
-        }
+        content=response.dict()
     )
 
 
-async def http_exception_handler(request: Request, exc: HTTPException):
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """
-    Manejador personalizado para excepciones HTTP
+    Custom HTTP exception handler
     """
-    
-    # Mensajes personalizados según el código de estado
+
     friendly_messages = {
         400: "Solicitud incorrecta",
         401: "Credenciales inválidas o token expirado",
@@ -100,49 +128,56 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         422: "Datos de entrada inválidos",
         500: "Error interno del servidor"
     }
-    
+
     friendly_msg = friendly_messages.get(exc.status_code, "Error en la solicitud")
-    
-    # Log del error
+
     logger.warning(f"HTTP {exc.status_code} en {request.url}: {exc.detail}")
-    
+
+    response = ErrorResponse(
+        error=ErrorDetail(
+            code=f"HTTP_{exc.status_code}",
+            message=friendly_msg,
+            details={"original_detail": exc.detail, "status_code": exc.status_code}
+        ),
+        timestamp=datetime.utcnow().isoformat() + 'Z'
+    )
+
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "error": friendly_msg,
-            "mensaje": exc.detail,
-            "codigo": f"HTTP_{exc.status_code}",
-            "status_code": exc.status_code
-        }
+        content=response.dict()
     )
 
 
-async def general_exception_handler(request: Request, exc: Exception):
+async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """
-    Manejador para errores generales no capturados
+    Handler for general errors not captured
     """
-    
+
     logger.error(f"Error no manejado en {request.url}: {str(exc)}", exc_info=True)
-    
+
+    response = ErrorResponse(
+        error=ErrorDetail(
+            code="INTERNAL_ERROR",
+            message="Ocurrió un error inesperado. Por favor intenta de nuevo.",
+            details={"exception_type": type(exc).__name__}
+        ),
+        timestamp=datetime.utcnow().isoformat() + 'Z'
+    )
+
     return JSONResponse(
         status_code=500,
-        content={
-            "error": "Error interno del servidor",
-            "mensaje": "Ocurrió un error inesperado. Por favor intenta de nuevo.",
-            "codigo": "INTERNAL_ERROR"
-        }
+        content=response.dict()
     )
 
 
-# Función helper para crear respuestas de error consistentes
 def create_error_response(
     message: str,
-    details: str = None,
+    details: Optional[str] = None,
     status_code: int = 400,
-    error_code: str = None
-):
+    error_code: Optional[str] = None
+) -> JSONResponse:
     """
-    Crea una respuesta de error consistente
+    Creates a consistent error response
     """
     content = {
         "error": message,
@@ -154,3 +189,25 @@ def create_error_response(
         status_code=status_code,
         content=content
     )
+
+async def custom_http_exception_handler(request: Request, exc: CustomHTTPException) -> JSONResponse:
+    """
+    Custom HTTP exception handler
+    """
+
+    logger.warning(f"Custom HTTP {exc.status_code} en {request.url}: {exc.message}")
+
+    response = ErrorResponse(
+        error=ErrorDetail(
+            code=exc.code,
+            message=exc.message,
+            details=exc.details
+        ),
+        timestamp=datetime.utcnow().isoformat() + 'Z'
+    )
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=response.model_dump()
+    )
+

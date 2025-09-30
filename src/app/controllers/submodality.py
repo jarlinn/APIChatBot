@@ -131,6 +131,19 @@ async def create_submodality(
         if not modality:
             raise HTTPException(status_code=404, detail="Modality not found")
 
+        # Check if submodality with same name already exists for this modality
+        existing_name = await session.execute(
+            select(Submodality).where(
+                Submodality.modality_id == submodality_data.modality_id,
+                Submodality.name == submodality_data.name,
+            )
+        )
+        if existing_name.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409,
+                detail="Ya existe una submodalidad con ese nombre en esta modalidad"
+            )
+
         base_slug = generate_slug(submodality_data.name)
         slug = base_slug
 
@@ -205,13 +218,27 @@ async def update_submodality(
                 raise HTTPException(status_code=404, detail="Modality not found")
 
         if submodality_data.name is not None:
+            # Check if another submodality with same name exists for this modality
+            modality_id_to_check = (
+                submodality_data.modality_id or submodality.modality_id
+            )
+            existing_name = await session.execute(
+                select(Submodality).where(
+                    Submodality.modality_id == modality_id_to_check,
+                    Submodality.name == submodality_data.name,
+                    Submodality.id != submodality_id,
+                )
+            )
+            if existing_name.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Ya existe otra submodalidad con ese nombre en esta modalidad"
+                )
+
             submodality.name = submodality_data.name
             base_slug = generate_slug(submodality_data.name)
             slug = base_slug
 
-            modality_id_to_check = (
-                submodality_data.modality_id or submodality.modality_id
-            )
             counter = 1
             while True:
                 existing = await session.execute(

@@ -84,7 +84,6 @@ Las variables principales ya están configuradas en el archivo `.env`. Las más 
 
 ```env
 # Base de datos PostgreSQL (CONFIGURADO)
-DATABASE_URL=postgresql+asyncpg://chatbot_user:chatbot_password@localhost:5432/chatbot_db
 
 # JWT (CONFIGURADO)
 SECRET_KEY=a8f5f167f44f4964e6c998dee827110c
@@ -452,8 +451,6 @@ docker-compose down
 El proyecto está configurado para usar PostgreSQL con la extensión pgvector para embeddings vectoriales:
 
 ```env
-# PostgreSQL con pgvector
-DATABASE_URL=postgresql+asyncpg://chatbot_user:chatbot_password@localhost:5432/chatbot_db
 
 # Configuración específica
 POSTGRES_HOST=localhost
@@ -510,14 +507,6 @@ CREATE DATABASE chatbot_db OWNER chatbot_user;
 
 -- Crear extensión pgvector
 CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-#### SQLite (Solo para Desarrollo Local)
-
-Para desarrollo rápido, puedes usar SQLite:
-
-```env
-DATABASE_URL=sqlite+aiosqlite:///./chatbot.db
 ```
 
 ## 🧠 Embeddings Vectoriales y Búsqueda Semántica

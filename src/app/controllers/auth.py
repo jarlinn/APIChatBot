@@ -1,7 +1,8 @@
 # src/app/controllers/auth.py
 from datetime import datetime, timedelta
 import secrets
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Header
 from src.app.schemas.user import (
     UserCreate, Token, PasswordResetRequest, PasswordReset, RefreshTokenRequest
 )
@@ -11,16 +12,28 @@ from sqlalchemy.future import select
 from src.app.utils.hashing import hash_password, verify_password
 from src.app.utils.jwt_utils import create_token_pair, verify_refresh_token
 from src.app.services.email_service import email_service
+from src.app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=None)
-async def register(payload: UserCreate, session=Depends(get_async_session)):
+async def register(
+    payload: UserCreate,
+    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
+    session=Depends(get_async_session)
+):
     q = await session.execute(select(User).filter_by(email=payload.email))
     if q.scalars().first():
         raise HTTPException(status_code=400, detail="Email exists")
-    user = User(email=payload.email, hashed_password=hash_password(payload.password))
+
+    if not x_admin_token or x_admin_token != settings.admin_view:
+        raise HTTPException(status_code=403, detail="Invalid admin token")
+
+    user = User(
+        email=payload.email,
+        hashed_password=hash_password(payload.password)
+    )
     session.add(user)
     await session.commit()
     return {"msg": "created"}

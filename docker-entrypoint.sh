@@ -21,12 +21,14 @@ wait_for_service() {
     echo "✅ $service_name está disponible!"
 }
 
-# Esperar a MinIO si está configurado
-if [ -n "$MINIO_ENDPOINT" ] && [ "$MINIO_ENDPOINT" != "localhost:9000" ]; then
-    MINIO_HOST=$(echo $MINIO_ENDPOINT | cut -d':' -f1)
-    MINIO_PORT=$(echo $MINIO_ENDPOINT | cut -d':' -f2)
-    echo "⏳ Esperando a que MinIO esté disponible en $MINIO_HOST:$MINIO_PORT..."
-    while ! curl -f --connect-timeout 5 "http://$MINIO_HOST:$MINIO_PORT/minio/health/live" >/dev/null 2>&1; do
+# Esperar a MinIO si es una instancia local
+if [[ "$MINIO_ENDPOINT" == localhost* ]] || [[ "$MINIO_ENDPOINT" == 127.0.0.1* ]]; then
+    PROTOCOL="http"
+    if [ "$MINIO_SECURE" = true ]; then
+        PROTOCOL="https"
+    fi
+    echo "⏳ Esperando a que MinIO esté disponible en $MINIO_ENDPOINT"
+    while ! curl -f --connect-timeout "$PROTOCOL:$MINIO_ENDPOINT/minio/health/live" >/dev/null 2>&1; do
         echo "   MinIO no está listo, esperando..."
         sleep 2
     done
@@ -47,10 +49,11 @@ fi
 echo "🔄 Ejecutando migraciones de base de datos..."
 alembic upgrade head
 
-# Crear bucket en MinIO si no existe
-if [ -n "$MINIO_ENDPOINT" ] && [ -n "$MINIO_BUCKET_NAME" ]; then
-    echo "🗂️ Configurando bucket de MinIO..."
-    python -c "
+# Crear bucket en MinIO si no existe y es instancia local
+if [[ "$MINIO_ENDPOINT" == localhost* ]] || [[ "$MINIO_ENDPOINT" == 127.0.0.1* ]]; then
+    if [ -n "$MINIO_BUCKET_NAME" ]; then
+        echo "🗂️ Configurando bucket de MinIO..."
+        python -c "
 import asyncio
 from src.app.services.storage_service import storage_service
 
@@ -63,6 +66,7 @@ async def setup_minio():
 
 asyncio.run(setup_minio())
 " || echo "⚠️ No se pudo configurar MinIO automáticamente"
+    fi
 fi
 
 echo "🎉 Configuración completada. Iniciando servidor..."

@@ -2,7 +2,6 @@
 Service for storage management
 """
 
-import os
 import io
 import uuid
 from pathlib import Path

@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 _embedding_executor = None
 _embedding_executor_lock = threading.Lock()
 
+MAX_CONCURRENT_EMBEDDINGS = 10
+
 def get_embedding_executor() -> ThreadPoolExecutor:
     """Get the thread pool for embeddings (singleton)"""
     global _embedding_executor
@@ -33,10 +35,10 @@ def get_embedding_executor() -> ThreadPoolExecutor:
         with _embedding_executor_lock:
             if _embedding_executor is None:
                 _embedding_executor = ThreadPoolExecutor(
-                    max_workers=settings.max_concurrent_embeddings,
+                    max_workers=MAX_CONCURRENT_EMBEDDINGS,
                     thread_name_prefix="embedding_worker"
                 )
-                logger.info(f"Inicializado ThreadPoolExecutor con {settings.max_concurrent_embeddings} workers")
+                logger.info(f"Inicializado ThreadPoolExecutor con {MAX_CONCURRENT_EMBEDDINGS} workers")
     return _embedding_executor
 
 
@@ -46,12 +48,18 @@ class EmbeddingService:
     Usando sentence-transformers con all-MiniLM-L6-v2
     Optimized for high concurrency with caching and pooling
     """
+
+    EMBEDDING_CACHE_SIZE = 1000
+    MAX_EMBEDDING_BATCH_SIZE = 100
+    EMBEDDING_DIMENSION = 384
+    MODEL_NAME = "all-MiniLM-L6-v2"
+
     
     def __init__(self):
-        self.model_name = "all-MiniLM-L6-v2"
+        self.model_name = self.MODEL_NAME
         self.model = None
-        self.dimension = 384  # Dimension of the all-MiniLM-L6-v2 model
-        self.batch_size = settings.max_embedding_batch_size
+        self.dimension = self.EMBEDDING_DIMENSION
+        self.batch_size = self.MAX_EMBEDDING_BATCH_SIZE
         self._model_lock = threading.Lock()
         self._cache = {}  # Simple cache for frequent embeddings
         self._cache_lock = threading.Lock()
@@ -67,7 +75,7 @@ class EmbeddingService:
                     load_time = time.time() - start_time
                     logger.info(f"Model {self.model_name} loaded successfully in {load_time:.2f}s")
     
-    @lru_cache(maxsize=settings.embedding_cache_size)
+    @lru_cache(maxsize=EMBEDDING_CACHE_SIZE)
     def _get_cached_embedding(self, text_hash: str, text: str) -> List[float]:
         """Cache LRU for frequent embeddings"""
         self._load_model()
@@ -194,7 +202,7 @@ class EmbeddingService:
                 embedding=embedding,
                 chunk_index=0,
                 chunk_metadata='{"source": "question_text", "type": "single_chunk"}',
-                processing_model="all-MiniLM-L6-v2"
+                processing_model=self.MODEL_NAME
             )
             
             session.add(chunk_embedding)
@@ -245,7 +253,7 @@ class EmbeddingService:
                 embedding=embedding,
                 chunk_index=0,
                 chunk_metadata='{"source": "question_text", "type": "single_chunk"}',
-                processing_model="all-MiniLM-L6-v2"
+                processing_model=self.MODEL_NAME
             )
             
             session.add(chunk_embedding)

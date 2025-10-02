@@ -31,8 +31,6 @@ class EmailService:
     """
 
     def __init__(self):
-        self.environment = settings.environment
-        self.is_development = self.environment == "development"
 
         self.provider = EmailProvider(settings.email_provider)
 
@@ -77,7 +75,6 @@ class EmailService:
         print(f"📤 From: {self.from_name}")
         print(f"📥 To: {to_email}")
         print(f"📋 Subject: {subject}")
-        print(f"🌍 Environment: {self.environment}")
         print("-"*80)
         print("📄 HTML CONTENT:")
         print(

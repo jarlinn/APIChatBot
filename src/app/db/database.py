@@ -1,83 +1,68 @@
 """
-Configuración de la base de datos con soporte para PostgreSQL y pgvector
+Database configuration with support for PostgreSQL and pgvector
 """
+
+import logging
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.pool import NullPool, StaticPool
 from sqlalchemy import event
-import logging
+
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-# Create Base class
 Base = declarative_base()
+
+POOL_SIZE = 20
+MAX_OVERFLOW = 30
+POOL_TIMEOUT = 30
+POOL_RECYCLE = 3600
 
 
 def create_database_engine() -> AsyncEngine:
     """
-    Crea el motor de base de datos con configuración optimizada
+    Creates the database engine with optimized configuration
     """
-    database_url = settings.get_database_url()
-    
-    # Configuración específica según el tipo de base de datos
+    database_url = settings.postgresql_url
+
+
     engine_kwargs = {
         "echo": settings.database_echo,
-        "future": True,  # Usar SQLAlchemy 2.0 style
+        "future": True,
     }
     
-    if "postgresql" in database_url:
-        # Configuración optimizada para PostgreSQL con pool de conexiones
-        engine_kwargs.update({
-            "pool_size": settings.db_pool_size,
-            "max_overflow": settings.db_max_overflow,
-            "pool_timeout": settings.db_pool_timeout,
-            "pool_recycle": settings.db_pool_recycle,
-            "pool_pre_ping": True,  # Verificar conexiones antes de usar
-            "pool_reset_on_return": "commit",  # Reset automático de transacciones
-        })
-        logger.info(f"Configurando PostgreSQL async engine con pool: {settings.db_pool_size}+{settings.db_max_overflow} conexiones")
-    else:
-        # Configuración para SQLite (desarrollo)
-        engine_kwargs.update({
-            "poolclass": NullPool,
-            "connect_args": {"check_same_thread": False}
-        })
-        logger.info("Configurando SQLite engine para desarrollo")
+    if "postgresql" not in database_url and "postgresql+asyncpg" not in database_url:
+        raise ValueError(
+            f"Only PostgreSQL is allowed. Database URL provided: {database_url}"
+        )
+
+    engine_kwargs.update({
+        "pool_size": POOL_SIZE,
+        "max_overflow": MAX_OVERFLOW,
+        "pool_timeout": POOL_TIMEOUT,
+        "pool_recycle": POOL_RECYCLE,
+        "pool_pre_ping": True,
+        "pool_reset_on_return": "commit",
+    })
+    
+    logger.info(f"Configuring PostgreSQL async engine with pool: {POOL_SIZE}+{MAX_OVERFLOW} connections")
     
     engine = create_async_engine(database_url, **engine_kwargs)
     
-    # Event listeners para PostgreSQL
-    if "postgresql" in database_url:
-        @event.listens_for(engine.sync_engine, "connect")
-        def set_postgresql_search_path(dbapi_connection, connection_record):
-            """Configurar search_path y extensiones necesarias"""
-            try:
-                cursor = dbapi_connection.cursor()
-                # Asegurar que la extensión vector esté disponible
-                cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-                # Configurar search_path si es necesario
-                cursor.execute("SET search_path TO public;")
-                dbapi_connection.commit()
-                cursor.close()
-            except Exception as e:
-                logger.warning(f"No se pudo configurar PostgreSQL: {e}")
-                # Continuar sin configuración específica
-    
+    # Event listeners for PostgreSQL
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_postgresql_search_path(dbapi_connection, connection_record):
+        """Configure search_path and necessary extensions“”‘’“”"""
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            cursor.execute("SET search_path TO public;")
+            dbapi_connection.commit()
+            cursor.close()
+        except Exception as e:
+            logger.error(f"PostgreSQL could not be configured: {e}")
+            raise RuntimeError(f"PostgreSQL could not be configured: {e}") from e
     return engine
 
-
-# Crear instancia global del motor
 engine = create_database_engine()
-
-
-# Dependency to get DB session (for backward compatibility)
-def get_db():
-    """
-    Función de compatibilidad hacia atrás
-    Para nuevas implementaciones, usar get_async_session de session.py
-    """
-    raise NotImplementedError(
-        "Use get_async_session from session.py for async operations. "
-        "This function is kept for backward compatibility only."
-    )

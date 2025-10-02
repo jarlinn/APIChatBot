@@ -1,7 +1,11 @@
+"""
+Middleware for logs in http request
+"""
+
 import time
 import logging
+
 from fastapi import Request
-from fastapi.responses import Response
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

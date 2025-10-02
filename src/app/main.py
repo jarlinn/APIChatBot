@@ -10,6 +10,7 @@ from src.app.controllers.modality import router as modality_router
 from src.app.controllers.submodality import router as submodality_router
 from src.app.controllers.category import router as category_router
 from src.app.controllers.profile import router as profile_router
+from src.app.middlewares.logging_middleware import logging_middleware
 from src.app.utils.error_handlers import (
     validation_exception_handler,
     http_exception_handler,
@@ -17,6 +18,7 @@ from src.app.utils.error_handlers import (
     custom_http_exception_handler
 )
 from src.app.schemas.error import CustomHTTPException
+from src.app.config import settings
 
 app = FastAPI(
     title="APIChatBot",
@@ -33,11 +35,14 @@ app.add_exception_handler(Exception, general_exception_handler)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Logging middleware
+app.middleware("http")(logging_middleware)
 
 # Include routers
 app.include_router(auth_router)

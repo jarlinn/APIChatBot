@@ -10,18 +10,16 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy poetry files and README
-COPY pyproject.toml poetry.lock README.md ./
+# Copy requirements file and README
+COPY requirements.txt README.md ./
 
 # Copy application code (needed for poetry install)
 COPY src/ ./src/
 COPY alembic.ini ./
 COPY migrations/ ./migrations/
 
-# Install poetry and dependencies
-RUN pip install poetry && \
-    poetry config virtualenvs.create false && \
-    poetry install --only=main --no-root
+# Install dependencies
+RUN pip install -r requirements.txt
 
 # Copy remaining files
 COPY docker-entrypoint.sh ./

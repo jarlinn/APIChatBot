@@ -1,18 +1,23 @@
 # src/app/controllers/auth.py
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
+import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
 from src.app.schemas.user import (
-    UserCreate, Token, PasswordResetRequest, PasswordReset, RefreshTokenRequest
+    UserCreate, Token, PasswordResetRequest, PasswordReset, RefreshTokenRequest,
+    EmailChangeRequest, EmailChangeConfirm
 )
 from src.app.models.user import User
 from src.app.db.session import get_async_session
+from src.app.dependencies.auth import get_current_active_user
 from sqlalchemy.future import select
 from src.app.utils.hashing import hash_password, verify_password
 from src.app.utils.jwt_utils import create_token_pair, verify_refresh_token
 from src.app.services.email_service import email_service
 from src.app.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -64,14 +69,11 @@ async def request_password_reset(
     q = await session.execute(select(User).filter_by(email=payload.email))
     user = q.scalars().first()
     if not user:
-        # Por seguridad, no revelamos si el email existe o no
-        return {
-            "msg": "Si el email existe, recibirás instrucciones para resetear tu contraseña"
-        }
+        raise HTTPException(status_code=404, detail="Email not found")
     
     # Generar token y establecer expiración (24 horas)
     reset_token = secrets.token_urlsafe(32)
-    expiration = datetime.utcnow() + timedelta(hours=24)
+    expiration = datetime.now(timezone.utc) + timedelta(hours=24)
     
     # Guardar token en la base de datos
     user.reset_token = reset_token
@@ -112,8 +114,8 @@ async def reset_password(
     user = q.scalars().first()
     
     if (
-        not user or not user.reset_token_expires or 
-        user.reset_token_expires < datetime.utcnow()
+        not user or not user.reset_token_expires or
+        user.reset_token_expires < datetime.now(timezone.utc)
     ):
         raise HTTPException(
             status_code=400, detail="Token inválido o expirado"
@@ -155,3 +157,202 @@ async def refresh_token(
         "expires_in": token_data["expires_in"],
         "refresh_token": token_data["refresh_token"]
     }
+
+
+@router.post("/email-change-request")
+async def request_email_change(
+    payload: EmailChangeRequest,
+    current_user=Depends(get_current_active_user),
+    session=Depends(get_async_session)
+):
+    """Solicitar cambio de email - envía código de verificación al email actual"""
+    try:
+        # Verificar que el nuevo email no esté en uso
+        existing_user = await session.execute(
+            select(User).filter_by(email=payload.new_email)
+        )
+        if existing_user.scalars().first():
+            raise HTTPException(status_code=400, detail="Email already in use")
+
+        # Verificar que no sea el mismo email actual
+        if current_user.email == payload.new_email:
+            raise HTTPException(status_code=400, detail="New email must be different from current email")
+
+        # Generar código de verificación
+        verification_code = secrets.token_hex(6).upper()  # Código de 12 caracteres alfanumérico
+        expiration = datetime.now(timezone.utc) + timedelta(hours=24)
+
+        # Guardar código y email pendiente en la base de datos
+        current_user.email_change_token = verification_code
+        current_user.email_change_token_expires = expiration
+        current_user.pending_email = payload.new_email
+        await session.commit()
+
+        # Enviar email con código de verificación al email ACTUAL
+        email_sent = await email_service.send_email_change_verification(
+            to_email=current_user.email,  # Email actual del usuario
+            verification_code=verification_code,
+            new_email=payload.new_email
+        )
+
+        if email_sent:
+            return {
+                "msg": "Verification code sent to your current email address",
+                "expires_in": "24 hours"
+            }
+        else:
+            # Si falla el envío, limpiar los campos
+            current_user.email_change_token = None
+            current_user.email_change_token_expires = None
+            current_user.pending_email = None
+            await session.commit()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send verification email. Please try again."
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in request_email_change: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/email-change-confirm")
+async def confirm_email_change(
+    payload: EmailChangeConfirm,
+    current_user=Depends(get_current_active_user),
+    session=Depends(get_async_session)
+):
+    """Confirmar código inicial y enviar confirmación al nuevo email"""
+    try:
+        # Verificar que el usuario tenga un token pendiente
+        if not current_user.email_change_token:
+            raise HTTPException(status_code=400, detail="No email change request found")
+
+        # Verificar que el token no haya expirado
+        if (
+            not current_user.email_change_token_expires or
+            current_user.email_change_token_expires < datetime.now(timezone.utc)
+        ):
+            raise HTTPException(status_code=400, detail="Verification code expired")
+
+        # Verificar que el código coincida
+        if current_user.email_change_token != payload.token.upper():
+            raise HTTPException(status_code=400, detail="Invalid verification code")
+
+        # Verificar que el email pendiente coincida
+        if current_user.pending_email != payload.new_email:
+            raise HTTPException(status_code=400, detail="Email mismatch")
+
+        # Verificar una vez más que el nuevo email no esté en uso
+        existing_user = await session.execute(
+            select(User).filter_by(email=payload.new_email)
+        )
+        if existing_user.scalars().first():
+            raise HTTPException(status_code=400, detail="Email already in use")
+
+        # Generar token único para confirmar desde el nuevo email
+        confirm_token = secrets.token_urlsafe(32)
+
+        # Actualizar usuario: mantener email actual, agregar token de confirmación
+        current_user.email_change_confirm_token = confirm_token
+        # No limpiamos los otros campos aún - se limpian al completar
+        await session.commit()
+
+        # Enviar email de confirmación al NUEVO email
+        email_sent = await email_service.send_email_change_confirmation(
+            to_email=payload.new_email,  # Nuevo email
+            confirm_token=confirm_token,
+            old_email=current_user.email  # Email actual para contexto
+        )
+
+        if email_sent:
+            return {
+                "msg": "Verification successful. Check your new email to complete the change.",
+                "next_step": "Check your new email and click the confirmation link"
+            }
+        else:
+            # Si falla el envío, revertir cambios
+            current_user.email_change_confirm_token = None
+            await session.commit()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send confirmation email. Please try again."
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in confirm_email_change: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/email-change-complete")
+async def complete_email_change(
+    token: str,
+    session=Depends(get_async_session)
+):
+    """Completar cambio de email desde el link enviado al nuevo email"""
+    try:
+        # Buscar usuario por token de confirmación
+        q = await session.execute(
+            select(User).filter_by(email_change_confirm_token=token)
+        )
+        user = q.scalars().first()
+
+        if not user:
+            raise HTTPException(status_code=400, detail="Invalid or expired confirmation link")
+
+        # Verificar que tenga email pendiente
+        if not user.pending_email:
+            raise HTTPException(status_code=400, detail="No pending email change found")
+
+        # Verificar que el token inicial no haya expirado
+        if (
+            not user.email_change_token_expires or
+            user.email_change_token_expires < datetime.now(timezone.utc)
+        ):
+            raise HTTPException(status_code=400, detail="Confirmation link expired")
+
+        # Guardar email anterior para notificación
+        old_email = user.email
+
+        # Completar el cambio de email
+        user.email = user.pending_email
+        user.email_change_token = None
+        user.email_change_token_expires = None
+        user.pending_email = None
+        user.email_change_confirm_token = None
+        await session.commit()
+
+        # Opcional: Enviar notificación al email anterior
+        try:
+            await email_service.send_email(
+                to_email=old_email,
+                subject="📧 Tu email fue actualizado - ChatBot UFPS",
+                html_content=f"""
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #2c3e50;">📧 Email Actualizado</h2>
+                    <p>Tu dirección de correo electrónico ha sido cambiada exitosamente.</p>
+                    <p><strong>Nuevo email:</strong> {user.email}</p>
+                    <p>Si no realizaste este cambio, contacta inmediatamente a soporte.</p>
+                </div>
+                """,
+                text_content=f"Tu email fue actualizado a: {user.email}"
+            )
+        except Exception as e:
+            logger.warning(f"Could not send notification to old email {old_email}: {e}")
+
+        return {
+            "msg": "Email updated successfully!",
+            "new_email": user.email
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in complete_email_change: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")

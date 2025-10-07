@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # Email
     email_provider: str = Field(default="console", env="EMAIL_PROVIDER")
-    email_from_name: str = Field(default="ChatBot UFPS", env="EMAIL_FROM_NAME")
+    email_from_name: str = Field(default="ChatBot UFPS", env="EMAIL_FROM_NAME") 
     frontend_url: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
     mailtrap_host: str = Field(default="sandbox.smtp.mailtrap.io", env="MAILTRAP_HOST")
     mailtrap_port: int = Field(default=2525, env="MAILTRAP_PORT")

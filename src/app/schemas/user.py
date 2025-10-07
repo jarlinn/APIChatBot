@@ -139,3 +139,27 @@ class PasswordChangeRequest(BaseModel):
                 "new_password": "new_password",
             }
         }
+
+
+class EmailChangeRequest(BaseModel):
+    """Schema for requesting email change"""
+    new_email: EmailStr
+
+    class Config:
+        json_schema_extra = {
+            "example": {"new_email": "nuevo@email.com"}
+        }
+
+
+class EmailChangeConfirm(BaseModel):
+    """Schema for confirming email change"""
+    token: str
+    new_email: EmailStr
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "token": "abc123def456",
+                "new_email": "nuevo@email.com"
+            }
+        }

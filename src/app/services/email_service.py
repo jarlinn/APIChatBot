@@ -52,17 +52,16 @@ class EmailService:
         if self.provider == EmailProvider.CONSOLE:
             return {}
         
-        elif self.provider == EmailProvider.MAILTRAP:
-            return {
-                "host": settings.mailtrap_host,
-                "port": settings.mailtrap_port,
-                "username": settings.mailtrap_username,
-                "password": settings.mailtrap_password,
-                "from_email": settings.mailtrap_from_email,
-                "use_tls": True
-            }
-        
-        return {}
+        # if self.api_token is not None:
+        return {
+            "host": settings.mailtrap_host,
+            "port": settings.mailtrap_port,
+            "username": settings.mailtrap_username,
+            "password": settings.mailtrap_password,
+            "from_email": settings.mailtrap_from_email,
+            "use_tls": True
+        }
+        # return {}
 
     def _print_console_email(
         self, to_email: str, subject: str, html_content: str, 
@@ -362,6 +361,175 @@ Accede a la plataforma en: {self.frontend_url}
             
         except Exception as e:
             logger.error("❌ Error sending welcome email to %s: %s", to_email, str(e))
+            return False
+
+    async def send_email_change_verification(
+        self,
+        to_email: str,
+        verification_code: str,
+        new_email: str
+    ) -> bool:
+        """
+        Send email change verification code
+
+        Args:
+            to_email: Current email address (recipient)
+            verification_code: Verification code for email change
+            new_email: New email address the user wants to change to
+
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        try:
+            # Create email content
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #2c3e50;">🔐 Código de Verificación - Cambio de Email</h2>
+
+                <p>Hola,</p>
+
+                <p>Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.</p>
+
+                <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; padding: 20px; margin: 20px 0; text-align: center;">
+                    <h3 style="color: #495057; margin: 0 0 10px 0;">Tu código de verificación:</h3>
+                    <div style="font-size: 24px; font-weight: bold; color: #007bff; letter-spacing: 3px;">{verification_code}</div>
+                </div>
+
+                <p><strong>Nuevo email solicitado:</strong> {new_email}</p>
+
+                <p>Ingresa este código en la aplicación para confirmar el cambio de tu dirección de correo electrónico.</p>
+
+                <p style="color: #dc3545;"><strong>⚠️ Importante:</strong> Este código expirará en 24 horas.</p>
+
+                <p>Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+
+                <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+                <p style="color: #7f8c8d; font-size: 12px;">
+                    Este es un correo automático, por favor no responder.<br>
+                    Si tienes preguntas, contacta a: support@chatbot.ufps.edu.co
+                </p>
+            </div>
+            """
+
+            text_content = f"""
+🔐 Código de Verificación - Cambio de Email
+
+Hola,
+
+Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.
+
+Tu código de verificación: {verification_code}
+
+Nuevo email solicitado: {new_email}
+
+Ingresa este código en la aplicación para confirmar el cambio de tu dirección de correo electrónico.
+
+⚠️ Importante: Este código expirará en 24 horas.
+
+Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
+
+---
+📧 ¿Necesitas ayuda? Contacta a: support@chatbot.ufps.edu.co
+🌐 Sitio web: {self.frontend_url}
+            """.strip()
+
+            return await self.send_email(
+                to_email=to_email,
+                subject="🔐 Código de Verificación - Cambio de Email - ChatBot UFPS",
+                html_content=html_content,
+                text_content=text_content
+            )
+
+        except Exception as e:
+            logger.error("❌ Error sending email change verification to %s: %s", to_email, str(e))
+            return False
+
+    async def send_email_change_confirmation(
+        self,
+        to_email: str,
+        confirm_token: str,
+        old_email: str
+    ) -> bool:
+        """
+        Send email change confirmation to new email address
+
+        Args:
+            to_email: New email address (recipient)
+            confirm_token: Confirmation token for completing email change
+            old_email: Current email address for context
+
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        try:
+            # Create confirmation URL
+            confirm_url = f"{self.frontend_url}/auth/email-change-complete?token={confirm_token}"
+
+            # Create email content
+            html_content = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #2c3e50;">✅ Confirma tu nuevo email</h2>
+
+                <p>Hola,</p>
+
+                <p>Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.</p>
+
+                <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; padding: 20px; margin: 20px 0;">
+                    <p><strong>Email anterior:</strong> {old_email}</p>
+                    <p><strong>Nuevo email:</strong> {to_email}</p>
+                </div>
+
+                <p>Para completar el cambio de email, haz click en el botón de abajo:</p>
+
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{confirm_url}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                        ✅ Confirmar cambio de email
+                    </a>
+                </div>
+
+                <p style="color: #dc3545;"><strong>⚠️ Importante:</strong> Este enlace expirará en 24 horas.</p>
+
+                <p>Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
+
+                <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+                <p style="color: #7f8c8d; font-size: 12px;">
+                    Este es un correo automático, por favor no responder.<br>
+                    Si tienes preguntas, contacta a: support@chatbot.ufps.edu.co
+                </p>
+            </div>
+            """
+
+            text_content = f"""
+✅ Confirma tu nuevo email
+
+Hola,
+
+Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.
+
+Email anterior: {old_email}
+Nuevo email: {to_email}
+
+Para completar el cambio, visita este enlace:
+{confirm_url}
+
+⚠️ Importante: Este enlace expirará en 24 horas.
+
+Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
+
+---
+📧 ¿Necesitas ayuda? Contacta a: support@chatbot.ufps.edu.co
+🌐 Sitio web: {self.frontend_url}
+            """.strip()
+
+            return await self.send_email(
+                to_email=to_email,
+                subject="✅ Confirma tu nuevo email - ChatBot UFPS",
+                html_content=html_content,
+                text_content=text_content
+            )
+
+        except Exception as e:
+            logger.error("❌ Error sending email change confirmation to %s: %s", to_email, str(e))
             return False
 
 

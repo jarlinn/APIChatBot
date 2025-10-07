@@ -7,6 +7,11 @@ services:
     container_name: chatbot-api
     ports:
       - "8000:8000"
+    volumes:
+      # Mount source code for development (hot reload)
+      - ./src:/app/src
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
     environment:
       # Base de datos PostgreSQL con pgvector
       - POSTGRES_HOST=db
@@ -16,7 +21,7 @@ services:
       - POSTGRES_DB=chatbot_db
       - DATABASE_ECHO=false
 
-      - GEMINI_API_KEY=AIzaSyBqGwugN0ApFv2C5Ftg76CR4GK0OAaHpVo
+      - GEMINI_API_KEY=AIzaSyAoP2rpXQXq2qh80g9EcpcU9JmgL6bKt9s
       
       # JWT
       - SECRET_KEY=a8f5f167f44f4964e6c998dee827110c
@@ -29,7 +34,7 @@ services:
       - MINIO_SECURE=false
       
       # Email configuration
-      - EMAIL_PROVIDER=console
+      - EMAIL_PROVIDER=mailtrap
       - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-ChatBot UFPS}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
 
@@ -39,6 +44,7 @@ services:
       - MAILTRAP_USERNAME=${MAILTRAP_USERNAME:-}
       - MAILTRAP_PASSWORD=${MAILTRAP_PASSWORD:-}
       - MAILTRAP_FROM_EMAIL=${MAILTRAP_FROM_EMAIL:-noreply@chatbot.ufps.edu.co}
+      - MAILTRAP_API_TOKEN="c68b46590a1e0ba93336addbcb4039ff"
       
       # N8N Webhook (opcional)
       - N8N_WEBHOOK=${N8N_WEBHOOK:-}
@@ -50,6 +56,7 @@ services:
     depends_on:
       - db
       - minio
+    command: python -m uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - chatbot-network
     restart: unless-stopped
@@ -93,7 +100,6 @@ services:
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
       - "5432:5432"
     networks:

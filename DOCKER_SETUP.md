@@ -20,14 +20,27 @@ docker-compose --version
 
 ## Comandos Básicos
 
-### Iniciar Todos los Servicios
+### Iniciar Todos los Servicios (Desarrollo con Hot Reload)
 ```bash
 docker-compose up -d
+```
+**Nota**: En modo desarrollo, los cambios en el código se reflejan automáticamente sin reconstruir la imagen.
+
+### Iniciar Todos los Servicios (Producción)
+```bash
+docker-compose up --build -d
 ```
 
 ### Detener Todos los Servicios
 ```bash
 docker-compose down
+
+docker-compose down -v
+```
+
+### Reconstruir servicios
+```bash
+docker-compose build --no-cache
 ```
 
 ### Ver Logs de un Servicio
@@ -65,29 +78,6 @@ docker-compose exec db psql -U chatbot_user -d chatbot_db
 ### Variables de Entorno Requeridas
 
 Crea un archivo `.env` en la raíz del proyecto con las siguientes variables:
-
-```env
-# Base de datos
-SECRET_KEY=your-super-secret-key-change-me
-
-# Email (desarrollo)
-EMAIL_PROVIDER=console
-ENVIRONMENT=development
-FRONTEND_URL=http://localhost:3000
-
-# Email (producción - Mailtrap)
-MAILTRAP_HOST=sandbox.smtp.mailtrap.io
-MAILTRAP_PORT=2525
-MAILTRAP_USERNAME=your-mailtrap-username
-MAILTRAP_PASSWORD=your-mailtrap-password
-MAILTRAP_FROM_EMAIL=noreply@chatbot.ufps.edu.co
-
-# N8N Webhook (opcional)
-N8N_WEBHOOK=https://your-n8n-instance.com/webhook/your-webhook-id
-
-# OpenAI API Key (para embeddings)
-OPENAI_API_KEY=your-openai-api-key
-```
 
 ### Archivo de Plantilla
 
@@ -222,7 +212,8 @@ chatbot-api (Proyecto)
 - Los volúmenes `postgres_data` y `minio_data` persisten los datos entre reinicios
 - El servicio `api` espera a que `db` y `minio` estén listos antes de iniciar
 - Los healthchecks aseguran que los servicios estén funcionando correctamente
-- Para desarrollo, puedes modificar el código y reconstruir solo la imagen de la API
+- **Modo Desarrollo**: El código fuente se monta como volumen, permitiendo hot reload automático
+- **Hot Reload**: Los cambios en archivos Python se detectan automáticamente y la aplicación se reinicia
 
 ## Desarrollo Local sin Docker
 

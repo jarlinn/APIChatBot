@@ -21,10 +21,10 @@ services:
       - POSTGRES_DB=chatbot_db
       - DATABASE_ECHO=false
 
-      - GEMINI_API_KEY=AIzaSyAoP2rpXQXq2qh80g9EcpcU9JmgL6bKt9s
+      - GEMINI_API_KEY=
       
       # JWT
-      - SECRET_KEY=a8f5f167f44f4964e6c998dee827110c
+      - SECRET_KEY=
       
       # MinIO (conecta al servicio minio)
       - MINIO_ENDPOINT=minio:9000
@@ -34,22 +34,19 @@ services:
       - MINIO_SECURE=false
       
       # Email configuration
-      - EMAIL_PROVIDER=mailtrap
+      - EMAIL_PROVIDER=sendgrid
       - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-ChatBot UFPS}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
 
       # Mailtrap (for development and production)
-      - MAILTRAP_HOST=${MAILTRAP_HOST:-sandbox.smtp.mailtrap.io}
-      - MAILTRAP_PORT=${MAILTRAP_PORT:-2525}
-      - MAILTRAP_USERNAME=${MAILTRAP_USERNAME:-}
-      - MAILTRAP_PASSWORD=${MAILTRAP_PASSWORD:-}
-      - MAILTRAP_FROM_EMAIL=${MAILTRAP_FROM_EMAIL:-noreply@chatbot.ufps.edu.co}
-      - MAILTRAP_API_TOKEN="c68b46590a1e0ba93336addbcb4039ff"
+
+      - MAILTRAP_FROM_EMAIL=chatbotiaufps@gmail.com
+      - SENDGRID_API_KEY=
       
       # N8N Webhook (opcional)
       - N8N_WEBHOOK=${N8N_WEBHOOK:-}
 
-      - ADMIN_VIEW=AIzaSyBqGwugN0ApFv2C5Ftg76CR4GK0OAaHpVo
+      - ADMIN_VIEW=
 
       - ALLOWED_ORIGINS=*
 

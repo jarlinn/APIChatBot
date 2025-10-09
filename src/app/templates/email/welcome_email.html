@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>¡Bienvenido a {{ app_name }}!</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #3498db;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #3498db;
+            margin-bottom: 10px;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        .message {
+            font-size: 16px;
+            margin-bottom: 25px;
+            line-height: 1.8;
+        }
+        .access-button {
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 16px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .access-button:hover {
+            background-color: #2980b9;
+        }
+        .temp-password {
+            background-color: #e8f4fd;
+            border: 1px solid #3498db;
+            color: #2980b9;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 16px;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+            <div>¡Bienvenido! 🎉</div>
+        </div>
+
+        <div class="content">
+            <div class="greeting">
+                ¡Hola <strong>{{ user_name }}</strong>!
+            </div>
+
+            <div class="message">
+                Tu cuenta ha sido creada exitosamente en {{ app_name }}.
+                Ya puedes comenzar a hacer preguntas y obtener respuestas inteligentes.
+            </div>
+
+            {% if temporary_password %}
+            <div class="temp-password">
+                <strong>Contraseña temporal:</strong> <code>{{ temporary_password }}</code>
+            </div>
+            {% endif %}
+
+            <div style="text-align: center;">
+                <a href="{{ frontend_url }}" class="access-button">
+                    Acceder a {{ app_name }}
+                </a>
+            </div>
+
+            <div class="message">
+                ¡Esperamos que disfrutes usando nuestra plataforma!
+            </div>
+        </div>
+
+        <div class="footer">
+            <div>
+                Este correo fue enviado automáticamente por {{ app_name }}.
+            </div>
+            <div style="font-size: 12px; color: #999; margin-top: 15px;">
+                Si tienes preguntas, contacta a: {{ support_email }}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

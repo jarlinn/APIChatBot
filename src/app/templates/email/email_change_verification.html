@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Código de Verificación - {{ app_name }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #007bff;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 10px;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        .message {
+            font-size: 16px;
+            margin-bottom: 25px;
+            line-height: 1.8;
+        }
+        .verification-code {
+            background-color: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            padding: 25px;
+            margin: 25px 0;
+            text-align: center;
+            font-family: 'Courier New', monospace;
+        }
+        .code-title {
+            color: #495057;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .code {
+            font-size: 32px;
+            font-weight: bold;
+            color: #007bff;
+            letter-spacing: 5px;
+            background-color: #e9ecef;
+            padding: 10px 20px;
+            border-radius: 5px;
+            display: inline-block;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            border: 1px solid #b3d7ff;
+            color: #004085;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+        }
+        .security-note {
+            font-size: 12px;
+            color: #999;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+            <div>Código de Verificación</div>
+        </div>
+
+        <div class="content">
+            <div class="greeting">
+                ¡Hola!
+            </div>
+
+            <div class="message">
+                Has solicitado cambiar tu dirección de correo electrónico en {{ app_name }}.
+            </div>
+
+            <div class="verification-code">
+                <div class="code-title">Tu código de verificación:</div>
+                <div class="code">{{ verification_code }}</div>
+            </div>
+
+            <div class="info-box">
+                <strong>Nuevo email solicitado:</strong> {{ new_email }}
+            </div>
+
+            <div class="message">
+                Ingresa este código en la aplicación para confirmar el cambio de tu dirección de correo electrónico.
+            </div>
+
+            <div class="warning">
+                <strong>⚠️ Importante:</strong><br>
+                • Este código expirará en <strong>24 horas</strong><br>
+                • Si no solicitaste este cambio, puedes ignorar este correo
+            </div>
+        </div>
+
+        <div class="footer">
+            <div>
+                Este correo fue enviado automáticamente por {{ app_name }}.
+            </div>
+            <div class="security-note">
+                Si tienes preguntas, contacta a: {{ support_email }}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

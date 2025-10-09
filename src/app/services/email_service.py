@@ -1,5 +1,5 @@
 """
-Email service with support for Console, Mailtrap, and SMTP providers
+Email service with support for Console and sendgrid (HTTPS API) providers
 """
 
 import os
@@ -7,9 +7,7 @@ from typing import Optional, Dict, Any
 import logging
 from enum import Enum
 
-import aiosmtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import aiohttp
 from jinja2 import Environment, FileSystemLoader
 
 from src.app.config import settings
@@ -20,14 +18,14 @@ logger = logging.getLogger(__name__)
 class EmailProvider(str, Enum):
     """Supported email providers"""
     CONSOLE = "console"
-    MAILTRAP = "mailtrap"
+    SENDGRID = "sendgrid"
 
 
 class EmailService:
     """
     Unified email service supporting multiple providers:
     - Console: Print emails to terminal (development)
-    - Mailtrap: Email testing service (development/production)
+    - SendGrid: Email delivery service via HTTPS API (production)
     """
 
     def __init__(self):
@@ -38,30 +36,11 @@ class EmailService:
         self.from_name = settings.email_from_name
         self.frontend_url = settings.frontend_url
         
-        # Provider-specific configuration
-        self._smtp_config = self._get_smtp_config()
-        
         # Template configuration
         template_dir = os.path.join(os.path.dirname(__file__), "../templates/email")
         self.jinja_env = Environment(loader=FileSystemLoader(template_dir))
         
         logger.info("📧 Email service initialized with provider: %s", self.provider.value)
-
-    def _get_smtp_config(self) -> Dict[str, Any]:
-        """Get SMTP configuration based on provider"""
-        if self.provider == EmailProvider.CONSOLE:
-            return {}
-        
-        # if self.api_token is not None:
-        return {
-            "host": settings.mailtrap_host,
-            "port": settings.mailtrap_port,
-            "username": settings.mailtrap_username,
-            "password": settings.mailtrap_password,
-            "from_email": settings.mailtrap_from_email,
-            "use_tls": True
-        }
-        # return {}
 
     def _print_console_email(
         self, to_email: str, subject: str, html_content: str, 
@@ -114,95 +93,140 @@ class EmailService:
             if self.provider == EmailProvider.CONSOLE:
                 self._print_console_email(to_email, subject, html_content, text_content)
                 return True
-            
-            # Get SMTP configuration based on provider
-            smtp_config = await self._get_smtp_config_for_provider()
-            if not smtp_config:
-                logger.error(
-                "Failed to get SMTP configuration for provider: %s", 
-                self.provider.value
-            )
-                return False
-            
-            # Create email message
-            message = self._create_email_message(
+            # Handle SendGrid provider (HTTPS API)
+            success = await self._send_sendgrid_email(
                 to_email=to_email,
                 subject=subject,
                 html_content=html_content,
-                text_content=text_content,
-                from_email=smtp_config["from_email"]
+                text_content=text_content
             )
-            
-            # Send email via SMTP
-            await self._send_smtp_email(message, smtp_config)
-            
-            logger.info(
-                "✅ Email sent successfully to %s via %s", 
-                to_email, self.provider.value
-            )
-            
-            return True
+            if success:
+                logger.info("✅ Email sent successfully to %s via %s", to_email, self.provider.value)
+            return success
 
         except Exception as e:
             logger.error("❌ Error sending email to %s: %s", to_email, str(e))
             return False
 
-    async def _get_smtp_config_for_provider(self) -> Optional[Dict[str, Any]]:
-        """Get SMTP configuration for the current provider"""
-        if self.provider == EmailProvider.MAILTRAP:
-            config = self._smtp_config.copy()
-            if not all([config.get("host"), config.get("username"), config.get("password")]):
-                logger.error(
-                    "Missing required Mailtrap configuration for %s", 
-                    self.provider.value
-                )
+    def _get_provider_config(self, provider: EmailProvider) -> Optional[Dict[str, Any]]:
+        """Get configuration for the specified provider"""
+        if provider == EmailProvider.SENDGRID:
+            if not settings.sendgrid_api_key:
+                logger.error("Missing SendGrid API key (SENDGRID_API_KEY)")
                 return None
-            return config
-        
+            return {"api_key": settings.sendgrid_api_key, "from_email": settings.mailtrap_from_email}  # Use same from_email
         return None
 
-    def _create_email_message(
-        self, 
-        to_email: str, 
-        subject: str, 
-        html_content: str, 
-        text_content: Optional[str], 
-        from_email: str
-    ) -> MIMEMultipart:
-        """Create email message with HTML and optional text content"""
-        message = MIMEMultipart("alternative")
-        message["Subject"] = subject
-        message["From"] = f"{self.from_name} <{from_email}>"
-        message["To"] = to_email
+    async def _send_sendgrid_email(
+        self,
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: Optional[str]
+    ) -> bool:
+        """Send email via SendGrid HTTPS API"""
+        config = self._get_provider_config(EmailProvider.SENDGRID)
+        if not config:
+            return False
 
-        # Add plain text content if provided
+        # Build content array
+        content = [{"type": "text/html", "value": html_content}]
         if text_content:
-            text_part = MIMEText(text_content, "plain", "utf-8")
-            message.attach(text_part)
+            content.insert(0, {"type": "text/plain", "value": text_content})
 
-        # Add HTML content
-        html_part = MIMEText(html_content, "html", "utf-8")
-        message.attach(html_part)
+        payload = {
+            "personalizations": [
+                {
+                    "to": [{"email": to_email}],
+                    "subject": subject
+                }
+            ],
+            "from": {"email": config["from_email"], "name": self.from_name},
+            "content": content
+        }
 
-        return message
+        headers = {
+            "Authorization": f"Bearer {config['api_key']}",
+            "Content-Type": "application/json"
+        }
 
-    async def _send_smtp_email(self, message: MIMEMultipart, smtp_config: Dict[str, Any]):
-        """Send email via SMTP"""
-        logger.info("📤 Connecting to SMTP server:")
-        logger.info("  🌐 Host: %s", smtp_config["host"])
-        logger.info("  🔌 Port: %s", smtp_config["port"])
-        logger.info("  👤 Username: %s", smtp_config["username"])
-        logger.info("  🔐 Password: %s", "***" + smtp_config["password"][-4:] if smtp_config["password"] else "None")
-        
-        await aiosmtplib.send(
-            message,
-            hostname=smtp_config["host"],
-            port=smtp_config["port"],
-            start_tls=smtp_config.get("use_tls", True),
-            username=smtp_config["username"],
-            password=smtp_config["password"],
-            timeout=30,
-        )
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.sendgrid.com/v3/mail/send",
+                    json=payload,
+                    headers=headers
+                ) as response:
+                    if response.status == 202:
+                        logger.info("📧 Email sent via SendGrid to %s", to_email)
+                        return True
+                    else:
+                        response_text = await response.text()
+                        logger.error("❌ SendGrid API error: %s - %s", response.status, response_text)
+                        return False
+        except Exception as e:
+            logger.error("❌ Error sending email via SendGrid: %s", str(e))
+            return False
+
+    async def send_email_change_success_notification(
+        self,
+        to_email: str,
+        temporary_password: str,
+        old_email: str
+    ) -> bool:
+        """
+        Send notification after successful email change with temporary password
+
+        Args:
+            to_email: New email address (recipient)
+            temporary_password: Temporary password that was set
+            old_email: Previous email address for context
+
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        try:
+            # Load email template
+            template = self.jinja_env.get_template("email_change_success.html")
+
+            # Prepare template variables
+            template_vars = {
+                "temporary_password": temporary_password,
+                "old_email": old_email,
+                "new_email": to_email,
+                "app_name": "ChatBot UFPS",
+                "frontend_url": self.frontend_url,
+                "support_email": "support@chatbot.ufps.edu.co"
+            }
+
+            # Render HTML template
+            html_content = template.render(**template_vars)
+
+            # Create plain text fallback
+            text_content = self._create_email_change_success_text(
+                temporary_password=temporary_password,
+                old_email=old_email,
+                new_email=to_email
+            )
+
+            # Send email
+            success = await self.send_email(
+                to_email=to_email,
+                subject="🔐 ¡Email actualizado! - Contraseña temporal - ChatBot UFPS",
+                html_content=html_content,
+                text_content=text_content
+            )
+
+            if success:
+                logger.info("✅ Email change success notification sent to %s", to_email)
+            else:
+                logger.error("❌ Failed to send email change success notification to %s", to_email)
+
+            return success
+
+        except Exception as e:
+            logger.error("❌ Error sending email change success notification to %s: %s", to_email, str(e))
+            return False
     
     async def send_password_reset_email(
         self,
@@ -289,52 +313,9 @@ Equipo ChatBot UFPS
 🌐 Sitio web: {self.frontend_url}
         """.strip()
 
-    async def send_welcome_email(
-        self,
-        to_email: str,
-        user_name: str,
-        temporary_password: Optional[str] = None
-    ) -> bool:
-        """
-        Send welcome email to new users
-        
-        Args:
-            to_email: Recipient email address
-            user_name: User's name
-            temporary_password: Temporary password if applicable
-            
-        Returns:
-            bool: True if email was sent successfully, False otherwise
-        """
-        try:
-            # Create welcome email content
-            html_content = f"""
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #2c3e50;">¡Bienvenido a ChatBot UFPS! 🎉</h2>
-                
-                <p>Hola <strong>{user_name}</strong>,</p>
-                
-                <p>Tu cuenta ha sido creada exitosamente en ChatBot UFPS. Ya puedes comenzar a hacer preguntas y obtener respuestas inteligentes.</p>
-                
-                {'<p><strong>Contraseña temporal:</strong> <code>' + temporary_password + '</code></p>' if temporary_password else ''}
-                
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="{self.frontend_url}" style="background-color: #3498db; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px;">
-                        Acceder a ChatBot UFPS
-                    </a>
-                </div>
-                
-                <p>¡Esperamos que disfrutes usando nuestra plataforma!</p>
-                
-                <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-                <p style="color: #7f8c8d; font-size: 12px;">
-                    Este es un correo automático, por favor no responder.<br>
-                    Si tienes preguntas, contacta a: support@chatbot.ufps.edu.co
-                </p>
-            </div>
-            """
-            
-            text_content = f"""
+    def _create_welcome_text(self, user_name: str, temporary_password: Optional[str]) -> str:
+        """Create plain text version of welcome email"""
+        return f"""
 ¡Bienvenido a ChatBot UFPS! 🎉
 
 Hola {user_name},
@@ -350,15 +331,139 @@ Accede a la plataforma en: {self.frontend_url}
 ---
 📧 ¿Necesitas ayuda? Contacta a: support@chatbot.ufps.edu.co
 🌐 Sitio web: {self.frontend_url}
-            """.strip()
-            
-            return await self.send_email(
+        """.strip()
+
+    def _create_email_change_verification_text(self, verification_code: str, new_email: str) -> str:
+        """Create plain text version of email change verification"""
+        return f"""
+🔐 Código de Verificación - Cambio de Email
+
+Hola,
+
+Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.
+
+Tu código de verificación: {verification_code}
+
+Nuevo email solicitado: {new_email}
+
+Ingresa este código en la aplicación para confirmar el cambio de tu dirección de correo electrónico.
+
+⚠️ Importante: Este código expirará en 24 horas.
+
+Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
+
+---
+📧 ¿Necesitas ayuda? Contacta a: support@chatbot.ufps.edu.co
+🌐 Sitio web: {self.frontend_url}
+        """.strip()
+
+    def _create_email_change_confirmation_text(self, confirm_url: str, old_email: str, new_email: str) -> str:
+        """Create plain text version of email change confirmation"""
+        return f"""
+✅ Confirma tu nuevo email
+
+Hola,
+
+Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.
+
+Email anterior: {old_email}
+Nuevo email: {new_email}
+
+Para completar el cambio, visita este enlace:
+{confirm_url}
+
+⚠️ Importante: Este enlace expirará en 24 horas.
+
+Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
+
+---
+📧 ¿Necesitas ayuda? Contacta a: support@chatbot.ufps.edu.co
+🌐 Sitio web: {self.frontend_url}
+        """.strip()
+
+    def _create_email_change_success_text(self, temporary_password: str, old_email: str, new_email: str) -> str:
+        """Create plain text version of email change success notification"""
+        return f"""
+🔐 ¡Email actualizado exitosamente!
+
+Hola,
+
+Tu dirección de correo electrónico ha sido cambiada exitosamente en ChatBot UFPS.
+
+📧 Email anterior: {old_email}
+📧 Email nuevo: {new_email}
+
+🔑 Tu contraseña temporal: {temporary_password}
+
+⚠️ IMPORTANTE: Por seguridad, debes cambiar esta contraseña temporal lo antes posible.
+
+Pasos para cambiar tu contraseña:
+1. Inicia sesión con tu nuevo email y la contraseña temporal
+2. Ve a tu perfil de usuario
+3. Haz clic en "Cambiar contraseña"
+4. Establece una nueva contraseña segura
+
+Si no cambias la contraseña temporal, tu cuenta podría estar en riesgo.
+
+---
+📧 ¿Necesitas ayuda? Contacta a: support@chatbot.ufps.edu.co
+🌐 Sitio web: {self.frontend_url}
+        """.strip()
+
+    async def send_welcome_email(
+        self,
+        to_email: str,
+        user_name: str,
+        temporary_password: Optional[str] = None
+    ) -> bool:
+        """
+        Send welcome email to new users
+
+        Args:
+            to_email: Recipient email address
+            user_name: User's name
+            temporary_password: Temporary password if applicable
+
+        Returns:
+            bool: True if email was sent successfully, False otherwise
+        """
+        try:
+            # Load email template
+            template = self.jinja_env.get_template("welcome_email.html")
+
+            # Prepare template variables
+            template_vars = {
+                "user_name": user_name,
+                "temporary_password": temporary_password,
+                "frontend_url": self.frontend_url,
+                "app_name": "ChatBot UFPS",
+                "support_email": "support@chatbot.ufps.edu.co"
+            }
+
+            # Render HTML template
+            html_content = template.render(**template_vars)
+
+            # Create plain text fallback
+            text_content = self._create_welcome_text(
+                user_name=user_name,
+                temporary_password=temporary_password
+            )
+
+            # Send email
+            success = await self.send_email(
                 to_email=to_email,
                 subject="🎉 ¡Bienvenido a ChatBot UFPS!",
                 html_content=html_content,
                 text_content=text_content
             )
-            
+
+            if success:
+                logger.info("✅ Welcome email sent to %s", to_email)
+            else:
+                logger.error("❌ Failed to send welcome email to %s", to_email)
+
+            return success
+
         except Exception as e:
             logger.error("❌ Error sending welcome email to %s: %s", to_email, str(e))
             return False
@@ -381,64 +486,41 @@ Accede a la plataforma en: {self.frontend_url}
             bool: True if email was sent successfully, False otherwise
         """
         try:
-            # Create email content
-            html_content = f"""
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #2c3e50;">🔐 Código de Verificación - Cambio de Email</h2>
+            # Load email template
+            template = self.jinja_env.get_template("email_change_verification.html")
 
-                <p>Hola,</p>
+            # Prepare template variables
+            template_vars = {
+                "verification_code": verification_code,
+                "new_email": new_email,
+                "app_name": "ChatBot UFPS",
+                "frontend_url": self.frontend_url,
+                "support_email": "support@chatbot.ufps.edu.co"
+            }
 
-                <p>Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.</p>
+            # Render HTML template
+            html_content = template.render(**template_vars)
 
-                <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; padding: 20px; margin: 20px 0; text-align: center;">
-                    <h3 style="color: #495057; margin: 0 0 10px 0;">Tu código de verificación:</h3>
-                    <div style="font-size: 24px; font-weight: bold; color: #007bff; letter-spacing: 3px;">{verification_code}</div>
-                </div>
+            # Create plain text fallback
+            text_content = self._create_email_change_verification_text(
+                verification_code=verification_code,
+                new_email=new_email
+            )
 
-                <p><strong>Nuevo email solicitado:</strong> {new_email}</p>
-
-                <p>Ingresa este código en la aplicación para confirmar el cambio de tu dirección de correo electrónico.</p>
-
-                <p style="color: #dc3545;"><strong>⚠️ Importante:</strong> Este código expirará en 24 horas.</p>
-
-                <p>Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
-
-                <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-                <p style="color: #7f8c8d; font-size: 12px;">
-                    Este es un correo automático, por favor no responder.<br>
-                    Si tienes preguntas, contacta a: support@chatbot.ufps.edu.co
-                </p>
-            </div>
-            """
-
-            text_content = f"""
-🔐 Código de Verificación - Cambio de Email
-
-Hola,
-
-Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.
-
-Tu código de verificación: {verification_code}
-
-Nuevo email solicitado: {new_email}
-
-Ingresa este código en la aplicación para confirmar el cambio de tu dirección de correo electrónico.
-
-⚠️ Importante: Este código expirará en 24 horas.
-
-Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
-
----
-📧 ¿Necesitas ayuda? Contacta a: support@chatbot.ufps.edu.co
-🌐 Sitio web: {self.frontend_url}
-            """.strip()
-
-            return await self.send_email(
+            # Send email
+            success = await self.send_email(
                 to_email=to_email,
                 subject="🔐 Código de Verificación - Cambio de Email - ChatBot UFPS",
                 html_content=html_content,
                 text_content=text_content
             )
+
+            if success:
+                logger.info("✅ Email change verification sent to %s", to_email)
+            else:
+                logger.error("❌ Failed to send email change verification to %s", to_email)
+
+            return success
 
         except Exception as e:
             logger.error("❌ Error sending email change verification to %s: %s", to_email, str(e))
@@ -462,71 +544,46 @@ Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
             bool: True if email was sent successfully, False otherwise
         """
         try:
+            # Load email template
+            template = self.jinja_env.get_template("email_change_confirmation.html")
+
             # Create confirmation URL
             confirm_url = f"{self.frontend_url}/auth/email-change-complete?token={confirm_token}"
 
-            # Create email content
-            html_content = f"""
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #2c3e50;">✅ Confirma tu nuevo email</h2>
+            # Prepare template variables
+            template_vars = {
+                "confirm_url": confirm_url,
+                "old_email": old_email,
+                "new_email": to_email,
+                "app_name": "ChatBot UFPS",
+                "frontend_url": self.frontend_url,
+                "support_email": "support@chatbot.ufps.edu.co"
+            }
 
-                <p>Hola,</p>
+            # Render HTML template
+            html_content = template.render(**template_vars)
 
-                <p>Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.</p>
+            # Create plain text fallback
+            text_content = self._create_email_change_confirmation_text(
+                confirm_url=confirm_url,
+                old_email=old_email,
+                new_email=to_email
+            )
 
-                <div style="background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; padding: 20px; margin: 20px 0;">
-                    <p><strong>Email anterior:</strong> {old_email}</p>
-                    <p><strong>Nuevo email:</strong> {to_email}</p>
-                </div>
-
-                <p>Para completar el cambio de email, haz click en el botón de abajo:</p>
-
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="{confirm_url}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                        ✅ Confirmar cambio de email
-                    </a>
-                </div>
-
-                <p style="color: #dc3545;"><strong>⚠️ Importante:</strong> Este enlace expirará en 24 horas.</p>
-
-                <p>Si no solicitaste este cambio, puedes ignorar este correo de forma segura.</p>
-
-                <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-                <p style="color: #7f8c8d; font-size: 12px;">
-                    Este es un correo automático, por favor no responder.<br>
-                    Si tienes preguntas, contacta a: support@chatbot.ufps.edu.co
-                </p>
-            </div>
-            """
-
-            text_content = f"""
-✅ Confirma tu nuevo email
-
-Hola,
-
-Has solicitado cambiar tu dirección de correo electrónico en ChatBot UFPS.
-
-Email anterior: {old_email}
-Nuevo email: {to_email}
-
-Para completar el cambio, visita este enlace:
-{confirm_url}
-
-⚠️ Importante: Este enlace expirará en 24 horas.
-
-Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
-
----
-📧 ¿Necesitas ayuda? Contacta a: support@chatbot.ufps.edu.co
-🌐 Sitio web: {self.frontend_url}
-            """.strip()
-
-            return await self.send_email(
+            # Send email
+            success = await self.send_email(
                 to_email=to_email,
                 subject="✅ Confirma tu nuevo email - ChatBot UFPS",
                 html_content=html_content,
                 text_content=text_content
             )
+
+            if success:
+                logger.info("✅ Email change confirmation sent to %s", to_email)
+            else:
+                logger.error("❌ Failed to send email change confirmation to %s", to_email)
+
+            return success
 
         except Exception as e:
             logger.error("❌ Error sending email change confirmation to %s: %s", to_email, str(e))
@@ -535,3 +592,4 @@ Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
 
 # Global email service instance
 email_service = EmailService()
+

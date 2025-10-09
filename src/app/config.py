@@ -40,11 +40,8 @@ class Settings(BaseSettings):
     email_provider: str = Field(default="console", env="EMAIL_PROVIDER")
     email_from_name: str = Field(default="ChatBot UFPS", env="EMAIL_FROM_NAME") 
     frontend_url: str = Field(default="http://localhost:3000", env="FRONTEND_URL")
-    mailtrap_host: str = Field(default="sandbox.smtp.mailtrap.io", env="MAILTRAP_HOST")
-    mailtrap_port: int = Field(default=2525, env="MAILTRAP_PORT")
-    mailtrap_username: str = Field(default="", env="MAILTRAP_USERNAME")
-    mailtrap_password: str = Field(default="", env="MAILTRAP_PASSWORD")
     mailtrap_from_email: str = Field(default="noreply@chatbot.ufps.edu.co", env="MAILTRAP_FROM_EMAIL")
+    sendgrid_api_key: str = Field(default="", env="SENDGRID_API_KEY")
 
     # Default Admin
     admin_view: str = Field(default="", env="ADMIN_VIEW_TOKEN")

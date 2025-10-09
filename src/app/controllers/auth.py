@@ -1,6 +1,7 @@
 # src/app/controllers/auth.py
 from datetime import datetime, timedelta, timezone
 import secrets
+import string
 import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header
@@ -320,13 +321,28 @@ async def complete_email_change(
         # Guardar email anterior para notificación
         old_email = user.email
 
-        # Completar el cambio de email
+        # Generar contraseña temporal segura
+        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(12))
+
+        # Completar el cambio de email y establecer contraseña temporal
         user.email = user.pending_email
+        user.hashed_password = hash_password(temp_password)  # Cambiar a contraseña temporal
         user.email_change_token = None
         user.email_change_token_expires = None
         user.pending_email = None
         user.email_change_confirm_token = None
         await session.commit()
+
+        # Enviar notificación con contraseña temporal al NUEVO email
+        try:
+            await email_service.send_email_change_success_notification(
+                to_email=user.email,  # Nuevo email
+                temporary_password=temp_password,
+                old_email=old_email
+            )
+        except Exception as e:
+            logger.error(f"Could not send success notification to new email {user.email}: {e}")
+            # No fallar la operación completa si el email falla
 
         # Opcional: Enviar notificación al email anterior
         try:
@@ -347,8 +363,9 @@ async def complete_email_change(
             logger.warning(f"Could not send notification to old email {old_email}: {e}")
 
         return {
-            "msg": "Email updated successfully!",
-            "new_email": user.email
+            "msg": "Email updated successfully! Check your new email for login instructions.",
+            "new_email": user.email,
+            "temporary_password_sent": True
         }
 
     except HTTPException:

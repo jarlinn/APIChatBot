@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>¡Email actualizado exitosamente! - {{ app_name }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #28a745;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #28a745;
+            margin-bottom: 10px;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        .message {
+            font-size: 16px;
+            margin-bottom: 25px;
+            line-height: 1.8;
+        }
+        .email-info {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .email-info p {
+            margin: 5px 0;
+            font-size: 16px;
+        }
+        .password-section {
+            background-color: #fff3cd;
+            border: 2px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 25px;
+            margin: 25px 0;
+            text-align: center;
+        }
+        .password-title {
+            color: #856404;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .password {
+            font-size: 24px;
+            font-weight: bold;
+            color: #856404;
+            background-color: #e9ecef;
+            padding: 10px 20px;
+            border-radius: 5px;
+            display: inline-block;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 1px;
+        }
+        .warning {
+            background-color: #f8d7da;
+            border: 2px solid #f5c6cb;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 25px 0;
+            text-align: center;
+        }
+        .warning strong {
+            font-size: 18px;
+        }
+        .steps {
+            background-color: #e7f3ff;
+            border: 1px solid #b3d7ff;
+            border-radius: 5px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .steps ol {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .steps li {
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+        }
+        .security-note {
+            font-size: 12px;
+            color: #999;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">{{ app_name }}</div>
+            <div>¡Email Actualizado Exitosamente!</div>
+        </div>
+
+        <div class="content">
+            <div class="greeting">
+                ¡Hola!
+            </div>
+
+            <div class="message">
+                Tu dirección de correo electrónico ha sido cambiada exitosamente en {{ app_name }}.
+            </div>
+
+            <div class="email-info">
+                <p><strong>📧 Email anterior:</strong> {{ old_email }}</p>
+                <p><strong>📧 Email nuevo:</strong> {{ new_email }}</p>
+            </div>
+
+            <div class="password-section">
+                <div class="password-title">🔑 Tu contraseña temporal:</div>
+                <div class="password">{{ temporary_password }}</div>
+            </div>
+
+            <div class="warning">
+                <strong>⚠️ ¡IMPORTANTE!</strong><br>
+                Por seguridad, debes cambiar esta contraseña temporal lo antes posible.<br>
+                Tu cuenta podría estar en riesgo si no lo haces.
+            </div>
+
+            <div class="steps">
+                <strong>Pasos para cambiar tu contraseña:</strong>
+                <ol>
+                    <li>Inicia sesión con tu nuevo email y la contraseña temporal</li>
+                    <li>Ve a tu perfil de usuario</li>
+                    <li>Haz clic en "Cambiar contraseña"</li>
+                    <li>Establece una nueva contraseña segura</li>
+                </ol>
+            </div>
+
+            <div class="message">
+                Si tienes alguna duda o problema, no dudes en contactar a nuestro equipo de soporte.
+            </div>
+        </div>
+
+        <div class="footer">
+            <div>
+                Este correo fue enviado automáticamente por {{ app_name }}.
+            </div>
+            <div class="security-note">
+                Si tienes preguntas, contacta a: {{ support_email }}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -46,7 +46,7 @@ services:
       # N8N Webhook (opcional)
       - N8N_WEBHOOK=${N8N_WEBHOOK:-}
 
-      - ADMIN_VIEW=
+      - ADMIN_VIEW=AIzaSyBqGwugN0ApFv2C5Ftg76CR4GK0OAaHpVo
 
       - ALLOWED_ORIGINS=*
 

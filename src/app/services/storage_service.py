@@ -5,12 +5,15 @@ Service for storage management
 import io
 import uuid
 from pathlib import Path
+import logging
 
 from minio import Minio
 from minio.error import S3Error
 from fastapi import UploadFile, HTTPException
 
 from src.app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class StorageService:
@@ -37,9 +40,9 @@ class StorageService:
         try:
             if not self.client.bucket_exists(self.bucket_name):
                 self.client.make_bucket(self.bucket_name)
-                print(f"Bucket '{self.bucket_name}' created successfully")
+                logger.info(f"Bucket '{self.bucket_name}' created successfully")
         except S3Error as e:
-            print(f"Error creating/verifying bucket: {e}")
+            logger.error(f"Error creating/verifying bucket: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Storage error: {str(e)}"
@@ -74,17 +77,17 @@ class StorageService:
                 )
             )
             
-            print(f"File uploaded successfully: {object_name}")
+            logger.info(f"File uploaded successfully: {object_name}")
             return object_name
             
         except S3Error as e:
-            print(f"Error uploading file: {e}")
+            logger.error(f"Error uploading file: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Error uploading file: {str(e)}"
             )
         except Exception as e:
-            print(f"Unexpected error uploading file: {e}")
+            logger.error(f"Unexpected error uploading file: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Internal error: {str(e)}"
@@ -110,7 +113,7 @@ class StorageService:
             )
             return url
         except S3Error as e:
-            print(f"Error generating URL: {e}")
+            logger.error(f"Error generating URL: {e}")
             raise HTTPException(
                 status_code=500,
                 detail=f"Error generating URL to download file: {str(e)}"
@@ -133,7 +136,7 @@ class StorageService:
             )
             return response
         except S3Error as e:
-            print(f"Error getting file: {e}")
+            logger.error(f"Error getting file: {e}")
             raise HTTPException(
                 status_code=404,
                 detail="File not found"
@@ -154,10 +157,10 @@ class StorageService:
                 bucket_name=self.bucket_name,
                 object_name=object_name
             )
-            print(f"File deleted: {object_name}")
+            logger.info(f"File deleted: {object_name}")
             return True
         except S3Error as e:
-            print(f"Error deleting file: {e}")
+            logger.error(f"Error deleting file: {e}")
             return False
     
     def file_exists(self, object_name: str) -> bool:

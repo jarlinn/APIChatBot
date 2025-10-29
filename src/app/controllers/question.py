@@ -10,6 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Depends
 from fastapi.responses import StreamingResponse
+from sympy import im
 
 from src.app.db.session import get_async_session
 from src.app.models import Question, Category, Modality, Submodality
@@ -28,6 +29,7 @@ from src.app.services.embedding_service import embedding_service
 from src.app.services.gemini_service import gemini_service
 from src.app.dependencies.auth import get_current_active_user
 from src.app.config import settings
+from src.app.utils.questions_utils import delete_file_if_exists
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +80,8 @@ async def create_question(
     current_user=Depends(get_current_active_user),
 ):
     """Create question using FormData with flexible hierarchy (text or file)"""
+    context_file_path = None
     try:
-        # Validations
         if context_type == "text" and not context_text:
             raise HTTPException(
                 status_code=400,
@@ -140,10 +142,9 @@ async def create_question(
                     submodality = await session.get(
                         Submodality, category.submodality_id
                     )
-            break
+            # break
 
         # Process file if provided
-        context_file_path = None
         if context_file:
             # Save file in MinIO/S3
             context_file_path = await storage_service.upload_file(context_file, "pdfs")
@@ -151,7 +152,7 @@ async def create_question(
         # Generate response with Gemini AI BEFORE creating the question
         # If Gemini is configured and fails, question creation should fail
         logger.info(
-            f"🤖 Generando respuesta con Gemini para pregunta: {question_text[:50]}..."
+            f"Generating answer with Gemini for question: {question_text[:50]}..."
         )
 
         # Check if Gemini is configured (has a real client, not simulated)
@@ -167,18 +168,17 @@ async def create_question(
                 else:
                     prompt = gemini_service._build_prompt(question_text, context_text, context_type, "create")
                     model_response = await gemini_service._generate_with_gemini(prompt)
-                logger.info(f"✅ Respuesta generada con Gemini real: {len(model_response)} caracteres")
+                logger.info(f"Response generated with real Gemini: {len(model_response)} characters")
             except Exception as e:
-                # If Gemini is configured and fails, don't create the question
-                logger.error(f"❌ Error generando respuesta con Gemini configurado: {e}")
+                logger.error(f"Error generating response with Gemini configured: {e}")
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Error generando respuesta con Gemini: {str(e)}. La pregunta no se creó."
+                    detail=f"Error generating response with Gemini: {str(e)}. The question was not created."
                 )
         else:
             # If Gemini is not configured, use simulated response
             model_response = gemini_service._simulate_response(question_text, context_type, "create")
-            logger.info(f"⚠️  Gemini no configurado, usando respuesta simulada: {len(model_response)} caracteres")
+            logger.info(f"Gemini not configured, using simulated response: {len(model_response)} characters")
 
         async for session in get_async_session():
             q = Question(
@@ -193,16 +193,45 @@ async def create_question(
                 model_response=model_response,  # Set the response immediately
             )
             session.add(q)
-            await session.commit()
+            await session.commit()  # Commit the question first
             await session.refresh(q)
 
-            # Load relationships for response
-            await session.refresh(q, ["modality", "submodality", "category"])
-            return build_question_response(q)
-    except Exception as e:
-        logger.error(f"Error in create_question: {e}")
+            try:
+                # Create embedding after question is committed
+                await embedding_service.create_embedding_for_question_text(
+                    question_id=str(q.id),
+                    question_text=question_text,
+                    session=session,
+                )
+                logger.info(f"Embedding generated for question {q.id}")
+
+                # Load relationships for response
+                await session.refresh(q, ["modality", "submodality", "category"])
+                return build_question_response(q)
+            except Exception as exc:
+                # If embedding fails, delete the question to maintain atomicity
+                logger.error(f"Error generating embedding for question {q.id}: {str(exc)}")
+                await session.delete(q)
+                await session.commit()
+                # Also delete the uploaded file if it exists
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error generating embedding: {str(exc)}. The question was not created."
+                )
+    except HTTPException as http_err:
+        try:
+            delete_file_if_exists(context_file_path)
+        except Exception as exc_file:
+            logger.error(f"Error deleting PDF file {context_file_path}: {exc_file}")
+        raise http_err
+    except Exception as exc:
+        try:
+            delete_file_if_exists(context_file_path)
+        except Exception as exc_file:
+            logger.error(f"Error deleting PDF file {context_file_path}: {exc}")
         raise HTTPException(
-            status_code=500, detail=f"Error interno del servidor: {str(e)}"
+            status_code=500,
+            detail=f"Error creating question: {str(exc)}. The question was not created."
         )
 
 
@@ -436,7 +465,7 @@ async def update_question(
                     question.submodality_id = None
                     question.category_id = None
                     hierarchy_changed = True
-                    logger.info(f"✅ Modality changed to {modality_id}, nulled submodality and category")
+                    logger.info(f"Modality changed to {modality_id}, nulled submodality and category")
 
             # Validate and update submodality if provided
             if submodality_id and submodality_id.strip():
@@ -455,7 +484,7 @@ async def update_question(
                     # When submodality changes, null category (only if modality didn't change)
                     if not hierarchy_changed:  # Only null category if modality didn't change
                         question.category_id = None
-                        logger.info(f"✅ Submodality changed to {submodality_id}, nulled category")
+                        logger.info(f"Submodality changed to {submodality_id}, nulled category")
                     hierarchy_changed = True
 
             # Validate and update category if provided
@@ -473,7 +502,7 @@ async def update_question(
                 # If no submodality but category exists, auto-set submodality
                 if not current_submodality_id and category.submodality_id:
                     question.submodality_id = category.submodality_id
-                    logger.info(f"✅ Auto-set submodality to {category.submodality_id} for category {category_id}")
+                    logger.info(f"Auto-set submodality to {category.submodality_id} for category {category_id}")
                 if original_category_id != category_id:
                     question.category_id = category_id
                     hierarchy_changed = True
@@ -513,38 +542,40 @@ async def update_question(
                     )
 
                     logger.info(
-                        f"✅ New response generated: {len(new_model_response)} characters"
+                        f"New response generated: {len(new_model_response)} characters"
                     )
 
                     question.model_response = new_model_response
 
                 except Exception as e:
-                    logger.error(f"❌ Error generating response with Gemini: {e}")
+                    logger.error(f"Error generating response with Gemini: {e}")
                     if not question.model_response:
                         question.model_response = f"Error generating response: {str(e)}"
             else:
                 if model_response_manually_edited:
                     question.model_response = model_response
 
-                if (
-                    question_text is not None
-                    and question.question_text != original_question_text
-                ) or hierarchy_changed:
-                    logger.info(f"🔄 Regenerating embeddings for updated question...")
-                    try:
-                        await embedding_service.recreate_embedding_for_question_text(
-                            question_id=question_id,
-                            question_text=question.question_text,
-                            session=session,
+            # Regenerate embeddings if question_text changed or hierarchy changed
+            if (
+                question_text is not None
+                and question.question_text != original_question_text
+            ) or hierarchy_changed:
+                logger.info(f"Regenerating embeddings for updated question...")
+                try:
+                    await embedding_service.recreate_embedding_for_question_text(
+                        question_id=question_id,
+                        question_text=question.question_text,
+                        session=session,
+                    )
+                    logger.info(f"Embeddings regenerated for question {question_id}")
+                except Exception as exc:
+                    logger.error(
+                        f"Error generating embedding for question {question_id}: {str(exc)}"
+                    )
+                    raise HTTPException(
+                            status_code=500,
+                            detail=f"Error generating embedding: {str(exc)}. The question was not created."
                         )
-                        logger.info(f"✅ Embeddings regenerated for question {question_id}")
-                    except Exception as e:
-                        logger.error(
-                            f"❌ Error regenerating embeddings for question {question_id}: {e}"
-                        )
-                        import traceback
-
-                        traceback.print_exc()
 
             await session.commit()
 
@@ -600,7 +631,7 @@ async def recalculate_question(
                 context_file_path=question.context_file,
                 action="recalculate",
             )
-            logger.info(f"✅ Response recalculated: {len(new_model_response)} characters")
+            logger.info(f"Response recalculated: {len(new_model_response)} characters")
 
             question.model_response = new_model_response
             question.status = QuestionStatus.PENDING.value
@@ -676,16 +707,16 @@ async def delete_question(
         if question.context_file and question.context_type == "pdf":
             try:
                 await storage_service.delete_file(question.context_file)
-                logger.info(f"✅ PDF file deleted from MinIO: {question.context_file}")
+                logger.info(f"PDF file deleted from MinIO: {question.context_file}")
             except Exception as e:
-                logger.error(f"❌ Error deleting PDF file {question.context_file}: {e}")
+                logger.error(f"Error deleting PDF file {question.context_file}: {e}")
                 # Continue with question deletion even if file deletion fails
 
         # Delete question from database
         await session.delete(question)
         await session.commit()
 
-        logger.info(f"✅ Question {question_id} completely deleted from database")
+        logger.info(f"Question {question_id} completely deleted from database")
 
         return {"message": f"Question {question_id} successfully deleted"}
 
@@ -727,7 +758,7 @@ async def update_question_approval(
 async def search_similarity(
     request: SimilaritySearchRequest,
     session=Depends(get_async_session),
-    current_user=Depends(get_current_active_user),
+    # current_user=Depends(get_current_active_user),
 ):
     """
     Search for similar questions in the database using vector embeddings.
@@ -759,7 +790,7 @@ async def search_similarity(
 
         logger.info(f"🔍 Searching for similarities for: '{request.question_text[:100]}...'")
         logger.info(
-            f"📊 Parameters: threshold={request.similarity_threshold}, limit={request.limit}"
+            f"Parameters: threshold={request.similarity_threshold}, limit={request.limit}"
         )
 
         similar_results = await embedding_service.search_by_text(
@@ -769,7 +800,7 @@ async def search_similarity(
             session=session,
         )
 
-        logger.info(f"📈 Found {len(similar_results)} similar results")
+        logger.info(f"Found {len(similar_results)} similar results")
 
         if not similar_results:
             return SimilaritySearchResponse(
@@ -798,7 +829,7 @@ async def search_similarity(
         best_similarity = similar_chunks[0].similarity_score if similar_chunks else 0
         message = f"Found {len(similar_chunks)} similar questions. The best similarity is {best_similarity:.2%}."
 
-        logger.info(f"✅ Search completed successfully")
+        logger.info(f"Search completed successfully")
 
         return SimilaritySearchResponse(
             query_text=request.question_text,
@@ -809,7 +840,7 @@ async def search_similarity(
         )
 
     except Exception as e:
-        logger.error(f"❌ Error in similarity search: {e}")
+        logger.error(f"Error in similarity search: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Error internal server during similarity search: {str(e)}",

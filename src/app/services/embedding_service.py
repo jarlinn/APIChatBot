@@ -11,6 +11,7 @@ import time
 from typing import List, Tuple, Dict, Any
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
+import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
@@ -234,16 +235,16 @@ class EmbeddingService:
             Created ChunkEmbedding
         """
         try:
-            print(f"🗑️  Deleting existing embeddings for question {question_id}")
+            logger.info(f"Deleting existing embeddings for question {question_id}")
 
             from sqlalchemy import delete
             delete_stmt = delete(ChunkEmbedding).where(ChunkEmbedding.question_id == question_id)
             result = await session.execute(delete_stmt)
             deleted_count = result.rowcount
             
-            print(f"✅ {deleted_count} existing embeddings deleted")
+            logger.info(f"{deleted_count} existing embeddings deleted")
 
-            print(f"🔄 Creating new embeddings for updated question")
+            logger.info(f"Creating new embeddings for updated question")
 
             embedding = await self.generate_embedding(question_text)
 
@@ -261,7 +262,7 @@ class EmbeddingService:
             
             new_embedding = chunk_embedding
             
-            print(f"✅ New embeddings created successfully")
+            logger.info(f"New embeddings created successfully")
             return new_embedding
             
         except Exception as e:

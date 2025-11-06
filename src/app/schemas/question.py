@@ -133,7 +133,7 @@ class SimilaritySearchRequest(BaseModel):
         ..., min_length=1, description="Question text to search for similarities"
     )
     similarity_threshold: Optional[float] = Field(
-        0.7, ge=0.0, le=1.0, description="Minimum similarity threshold (0.0 a 1.0)"
+        0.8, ge=0.0, le=1.0, description="Minimum similarity threshold (0.0 a 1.0)"
     )
     limit: Optional[int] = Field(
         5, ge=1, le=20, description="Maximum number of similar results"

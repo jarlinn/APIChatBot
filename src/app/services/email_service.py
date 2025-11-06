@@ -101,11 +101,11 @@ class EmailService:
                 text_content=text_content
             )
             if success:
-                logger.info("✅ Email sent successfully to %s via %s", to_email, self.provider.value)
+                logger.info("Email sent successfully to %s via %s", to_email, self.provider.value)
             return success
 
         except Exception as e:
-            logger.error("❌ Error sending email to %s: %s", to_email, str(e))
+            logger.error("Error sending email to %s: %s", to_email, str(e))
             return False
 
     def _get_provider_config(self, provider: EmailProvider) -> Optional[Dict[str, Any]]:
@@ -162,10 +162,10 @@ class EmailService:
                         return True
                     else:
                         response_text = await response.text()
-                        logger.error("❌ SendGrid API error: %s - %s", response.status, response_text)
+                        logger.error("SendGrid API error: %s - %s", response.status, response_text)
                         return False
         except Exception as e:
-            logger.error("❌ Error sending email via SendGrid: %s", str(e))
+            logger.error("Error sending email via SendGrid: %s", str(e))
             return False
 
     async def send_email_change_success_notification(
@@ -218,14 +218,14 @@ class EmailService:
             )
 
             if success:
-                logger.info("✅ Email change success notification sent to %s", to_email)
+                logger.info("Email change success notification sent to %s", to_email)
             else:
-                logger.error("❌ Failed to send email change success notification to %s", to_email)
+                logger.error("Failed to send email change success notification to %s", to_email)
 
             return success
 
         except Exception as e:
-            logger.error("❌ Error sending email change success notification to %s: %s", to_email, str(e))
+            logger.error("Error sending email change success notification to %s: %s", to_email, str(e))
             return False
     
     async def send_password_reset_email(
@@ -281,14 +281,14 @@ class EmailService:
             )
             
             if success:
-                logger.info("✅ Password reset email sent to %s", to_email)
+                logger.info("Password reset email sent to %s", to_email)
             else:
-                logger.error("❌ Failed to send password reset email to %s", to_email)
+                logger.error("Failed to send password reset email to %s", to_email)
                 
             return success
             
         except Exception as e:
-            logger.error("❌ Error sending password reset email to %s: %s", to_email, str(e))
+            logger.error("Error sending password reset email to %s: %s", to_email, str(e))
             return False
 
     def _create_password_reset_text(self, user_name: str, reset_url: str, reset_token: str) -> str:
@@ -458,14 +458,14 @@ Si no cambias la contraseña temporal, tu cuenta podría estar en riesgo.
             )
 
             if success:
-                logger.info("✅ Welcome email sent to %s", to_email)
+                logger.info("Welcome email sent to %s", to_email)
             else:
-                logger.error("❌ Failed to send welcome email to %s", to_email)
+                logger.error("Failed to send welcome email to %s", to_email)
 
             return success
 
         except Exception as e:
-            logger.error("❌ Error sending welcome email to %s: %s", to_email, str(e))
+            logger.error("Error sending welcome email to %s: %s", to_email, str(e))
             return False
 
     async def send_email_change_verification(
@@ -516,14 +516,14 @@ Si no cambias la contraseña temporal, tu cuenta podría estar en riesgo.
             )
 
             if success:
-                logger.info("✅ Email change verification sent to %s", to_email)
+                logger.info("Email change verification sent to %s", to_email)
             else:
-                logger.error("❌ Failed to send email change verification to %s", to_email)
+                logger.error("Failed to send email change verification to %s", to_email)
 
             return success
 
         except Exception as e:
-            logger.error("❌ Error sending email change verification to %s: %s", to_email, str(e))
+            logger.error("Error sending email change verification to %s: %s", to_email, str(e))
             return False
 
     async def send_email_change_confirmation(
@@ -573,20 +573,20 @@ Si no cambias la contraseña temporal, tu cuenta podría estar en riesgo.
             # Send email
             success = await self.send_email(
                 to_email=to_email,
-                subject="✅ Confirma tu nuevo email - ChatBot UFPS",
+                subject="Confirma tu nuevo email - ChatBot UFPS",
                 html_content=html_content,
                 text_content=text_content
             )
 
             if success:
-                logger.info("✅ Email change confirmation sent to %s", to_email)
+                logger.info("Email change confirmation sent to %s", to_email)
             else:
-                logger.error("❌ Failed to send email change confirmation to %s", to_email)
+                logger.error("Failed to send email change confirmation to %s", to_email)
 
             return success
 
         except Exception as e:
-            logger.error("❌ Error sending email change confirmation to %s: %s", to_email, str(e))
+            logger.error("Error sending email change confirmation to %s: %s", to_email, str(e))
             return False
 
 

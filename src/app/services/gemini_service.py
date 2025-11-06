@@ -33,7 +33,7 @@ class GeminiService:
                 f"Gemini configured correctly with API key: {self.api_key[:10]}..."
             )
         except Exception as e:
-            logger.error(f"❌ Error configuring Gemini: {e}")
+            logger.error(f"Error configuring Gemini: {e}")
             logger.error(f"   API Key used: {self.api_key[:10]}...")
 
     async def generate_response(
@@ -78,7 +78,7 @@ class GeminiService:
                 logger.info(f"⚠️  Gemini quota exceeded. Using simulated response.")
                 logger.info(f"   Detalles: {error_msg[:100]}...")
             else:
-                logger.error(f"❌ Error generating response with Gemini: {e}")
+                logger.error(f"Error generating response with Gemini: {e}")
             raise Exception("Error in gemini service") from e
 
     def _build_prompt(
@@ -156,7 +156,7 @@ Respuesta:"""
                 logger.info(f"📤 Uploading PDF to Gemini...")
                 # New SDK: upload file using client
                 uploaded_file = self.client.files.upload(file=temp_file_path)
-                logger.info(f"✅ PDF uploaded to Gemini: {uploaded_file.name}")
+                logger.info(f"PDF uploaded to Gemini: {uploaded_file.name}")
 
                 action_instructions = {
                     "create": "Responde ÚNICAMENTE basándote en el documento PDF universitario proporcionado.",
@@ -194,7 +194,7 @@ Respuesta:"""
                     os.unlink(temp_file_path)
 
         except Exception as e:
-            logger.error(f"❌ Error processing PDF with Gemini: {e}")
+            logger.error(f"Error processing PDF with Gemini: {e}")
             raise
 
     async def _generate_with_gemini_and_file(self, prompt: str, uploaded_file) -> str:
@@ -214,7 +214,7 @@ Respuesta:"""
                 raise Exception("Empty response from Gemini")
 
         except Exception as e:
-            logger.error(f"❌ Error generating with Gemini and file: {e}")
+            logger.error(f"Error generating with Gemini and file: {e}")
             raise
 
     async def _generate_with_gemini(self, prompt: str) -> str:
@@ -234,7 +234,7 @@ Respuesta:"""
                 raise Exception("Respuesta vacía de Gemini")
 
         except Exception as e:
-            logger.error(f"❌ Error en la generación con Gemini: {e}")
+            logger.error(f"Error en la generación con Gemini: {e}")
             raise
 
     def _simulate_response(

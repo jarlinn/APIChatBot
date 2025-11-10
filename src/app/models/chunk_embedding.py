@@ -28,11 +28,19 @@ class ChunkEmbedding(Base):
     )
 
     question_id = Column(
-        String(36), 
+        String(36),
         ForeignKey("questions.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
         comment="ID of the associated question"
+    )
+
+    document_id = Column(
+        String(36),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="ID of the associated document"
     )
 
     chunk_text = Column(
@@ -105,6 +113,12 @@ class ChunkEmbedding(Base):
         lazy="select"
     )
 
+    document = relationship(
+        "Document",
+        back_populates="embeddings",
+        lazy="select"
+    )
+
     def __repr__(self):
         return f"<ChunkEmbedding(id={self.id}, question_id={self.question_id}, chunk_index={self.chunk_index})>"
 
@@ -128,29 +142,32 @@ class ChunkEmbedding(Base):
     @classmethod
     def create_from_text(
         cls,
-        question_id: str,
         chunk_text: str,
         embedding: List[float],
+        question_id: Optional[str] = None,
+        document_id: Optional[str] = None,
         chunk_index: int = 0,
         chunk_metadata: Optional[str] = None,
         processing_model: str = "text-embedding-ada-002"
     ) -> "ChunkEmbedding":
         """
         Factory method to create a ChunkEmbedding from text and embedding
-        
+
         Args:
-            question_id: ID of the associated question
             chunk_text: Text of the chunk
             embedding: List of floats representing the embedding
+            question_id: ID of the associated question
+            document_id: ID of the associated document
             chunk_index: Index of the chunk
             chunk_metadata: Additional metadata in JSON
             processing_model: Model used to generate the embedding
-        
+
         Returns:
             New instance of ChunkEmbedding
         """
         return cls(
             question_id=question_id,
+            document_id=document_id,
             chunk_text=chunk_text,
             embedding=embedding,
             chunk_index=chunk_index,

@@ -96,21 +96,27 @@ class StorageService:
     def get_file_url(self, object_name: str, expires_in_hours: int = 1) -> str:
         """
         Generate presigned URL to download file
-        
+
         Args:
             object_name: Name of the object in MinIO
             expires_in_hours: Validity hours of the URL
-            
+
         Returns:
             str: Presigned URL to download file
         """
         try:
             from datetime import timedelta
+
+            # Always use the regular client for URL generation
+            # The external endpoint is handled by the MinIO server configuration
             url = self.client.presigned_get_object(
                 bucket_name=self.bucket_name,
                 object_name=object_name,
                 expires=timedelta(hours=expires_in_hours)
             )
+
+            # No URL manipulation needed - MinIO handles external URLs correctly in production
+
             return url
         except S3Error as e:
             logger.error(f"Error generating URL: {e}")

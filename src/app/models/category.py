@@ -27,6 +27,7 @@ class Category(Base):
     # Relationships
     submodality = relationship("Submodality", back_populates="categories")
     questions = relationship("Question", back_populates="category")
+    documents = relationship("Document", back_populates="category")
 
     def __repr__(self):
         return f"<Category(name='{self.name}', submodality='{self.submodality.name if self.submodality else 'None'}')>"

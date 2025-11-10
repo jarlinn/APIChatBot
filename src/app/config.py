@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     minio_secret_key: str = Field(env="MINIO_SECRET_KEY")
     minio_bucket_name: str = Field(env="MINIO_BUCKET_NAME")
     minio_secure: bool = Field(env="MINIO_SECURE")
+    minio_external_endpoint: Optional[str] = Field(default=None, env="MINIO_EXTERNAL_ENDPOINT")
 
     # N8N
     n8n_webhook: Optional[str] = Field(default=None, env="N8N_WEBHOOK")

@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 
 from src.app.controllers.auth import router as auth_router
 from src.app.controllers.question import router as question_router
+from src.app.controllers.document import router as document_router
 from src.app.controllers.modality import router as modality_router
 from src.app.controllers.submodality import router as submodality_router
 from src.app.controllers.category import router as category_router
@@ -48,6 +49,7 @@ app.middleware("http")(logging_middleware)
 # Include routers
 app.include_router(auth_router)
 app.include_router(question_router, prefix="/chat")
+app.include_router(document_router, prefix="/chat")
 app.include_router(modality_router, prefix="/chat")
 app.include_router(submodality_router, prefix="/chat")
 app.include_router(category_router, prefix="/chat")

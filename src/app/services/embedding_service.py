@@ -185,6 +185,79 @@ class EmbeddingService:
     ) -> ChunkEmbedding:
         """
         Create an embedding directly from the question text (without chunking)
+
+        Args:
+            question_id: ID of the question
+            question_text: Text of the question
+            session: Database session
+
+        Returns:
+            Created ChunkEmbedding
+        """
+        try:
+            embedding = await self.generate_embedding(question_text)
+
+            chunk_embedding = ChunkEmbedding.create_from_text(
+                question_id=question_id,
+                chunk_text=question_text,
+                embedding=embedding,
+                chunk_index=0,
+                chunk_metadata='{"source": "question_text", "type": "single_chunk"}',
+                processing_model=self.MODEL_NAME
+            )
+
+            session.add(chunk_embedding)
+            await session.flush()
+            await session.commit()
+
+            logger.info(f"Created embedding for question {question_id}")
+            return chunk_embedding
+
+        except Exception as e:
+            logger.error(f"Error creating embedding for question {question_id}: {e}")
+            raise
+
+    async def create_embedding_for_document_text(
+        self,
+        document_id: str,
+        question_text: str,
+        session: AsyncSession
+    ) -> ChunkEmbedding:
+        """
+        Create an embedding directly from the document question text (without chunking)
+
+        Args:
+            document_id: ID of the document
+            question_text: Text of the question
+            session: Database session
+
+        Returns:
+            Created ChunkEmbedding
+        """
+        try:
+            embedding = await self.generate_embedding(question_text)
+
+            chunk_embedding = ChunkEmbedding.create_from_text(
+                document_id=document_id,
+                chunk_text=question_text,
+                embedding=embedding,
+                chunk_index=0,
+                chunk_metadata='{"source": "document_question_text", "type": "single_chunk"}',
+                processing_model=self.MODEL_NAME
+            )
+
+            session.add(chunk_embedding)
+            await session.flush()
+            await session.commit()
+
+            logger.info(f"Created embedding for document {document_id}")
+            return chunk_embedding
+
+        except Exception as e:
+            logger.error(f"Error creating embedding for document {document_id}: {e}")
+            raise
+        """
+        Create an embedding directly from the question text (without chunking)
         
         Args:
             question_id: ID of the question
@@ -223,6 +296,103 @@ class EmbeddingService:
         question_text: str,
         session: AsyncSession
     ) -> ChunkEmbedding:
+        """
+        Recreate embeddings for a question (delete existing and create new)
+
+        Args:
+            question_id: ID of the question
+            question_text: New text of the question
+            session: Database session
+
+        Returns:
+            Created ChunkEmbedding
+        """
+        try:
+            logger.info(f"Deleting existing embeddings for question {question_id}")
+
+            from sqlalchemy import delete
+            delete_stmt = delete(ChunkEmbedding).where(ChunkEmbedding.question_id == question_id)
+            result = await session.execute(delete_stmt)
+            deleted_count = result.rowcount
+
+            logger.info(f"{deleted_count} existing embeddings deleted")
+
+            logger.info(f"Creating new embeddings for updated question")
+
+            embedding = await self.generate_embedding(question_text)
+
+            chunk_embedding = ChunkEmbedding.create_from_text(
+                question_id=question_id,
+                chunk_text=question_text,
+                embedding=embedding,
+                chunk_index=0,
+                chunk_metadata='{"source": "question_text", "type": "single_chunk"}',
+                processing_model=self.MODEL_NAME
+            )
+
+            session.add(chunk_embedding)
+            await session.flush()
+
+            new_embedding = chunk_embedding
+
+            logger.info(f"New embeddings created successfully")
+            return new_embedding
+
+        except Exception as e:
+            logger.error(f"Error recreating embedding for question {question_id}: {e}")
+            raise
+
+    async def recreate_embedding_for_document_text(
+        self,
+        document_id: str,
+        question_text: str,
+        session: AsyncSession
+    ) -> ChunkEmbedding:
+        """
+        Recreate embeddings for a document (delete existing and create new)
+
+        Args:
+            document_id: ID of the document
+            question_text: New text of the question
+            session: Database session
+
+        Returns:
+            Created ChunkEmbedding
+        """
+        try:
+            logger.info(f"Deleting existing embeddings for document {document_id}")
+
+            from sqlalchemy import delete
+            delete_stmt = delete(ChunkEmbedding).where(ChunkEmbedding.document_id == document_id)
+            result = await session.execute(delete_stmt)
+            deleted_count = result.rowcount
+
+            logger.info(f"{deleted_count} existing embeddings deleted")
+
+            logger.info(f"Creating new embeddings for updated document")
+
+            embedding = await self.generate_embedding(question_text)
+
+            chunk_embedding = ChunkEmbedding.create_from_text(
+                document_id=document_id,
+                chunk_text=question_text,
+                embedding=embedding,
+                chunk_index=0,
+                chunk_metadata='{"source": "document_question_text", "type": "single_chunk"}',
+                processing_model=self.MODEL_NAME
+            )
+
+            session.add(chunk_embedding)
+            await session.flush()
+
+            new_embedding = chunk_embedding
+
+            logger.info(f"New embeddings created successfully")
+            return new_embedding
+
+        except Exception as e:
+            logger.error(f"Error recreating embedding for document {document_id}: {e}")
+            raise
         """
         Recreate embeddings for a question (delete existing and create new)
         
@@ -400,13 +570,13 @@ class EmbeddingService:
     ) -> List[Tuple[ChunkEmbedding, float, Dict[str, Any]]]:
         """
         Search similar embeddings from a query text
-        
+
         Args:
             query_text: Query text
             limit: Maximum number of results
             similarity_threshold: Minimum similarity threshold
             session: Database session
-            
+
         Returns:
             List of tuples (ChunkEmbedding, similarity_score, question_data)
         """
@@ -418,6 +588,113 @@ class EmbeddingService:
             similarity_threshold=similarity_threshold,
             session=session
         )
+
+    async def search_by_text_for_documents(
+        self,
+        query_text: str,
+        limit: int = 5,
+        similarity_threshold: float = 0.7,
+        session: AsyncSession = None
+    ) -> List[Tuple[ChunkEmbedding, float, Dict[str, Any]]]:
+        """
+        Search similar embeddings from a query text for documents
+
+        Args:
+            query_text: Query text
+            limit: Maximum number of results
+            similarity_threshold: Minimum similarity threshold
+            session: Database session
+
+        Returns:
+            List of tuples (ChunkEmbedding, similarity_score, document_data)
+        """
+        query_embedding = await self.generate_embedding(query_text)
+
+        return await self.similarity_search_for_documents(
+            query_embedding=query_embedding,
+            limit=limit,
+            similarity_threshold=similarity_threshold,
+            session=session
+        )
+
+    async def similarity_search_for_documents(
+        self,
+        query_embedding: List[float],
+        limit: int = 5,
+        similarity_threshold: float = 0.7,
+        session: AsyncSession = None
+    ) -> List[Tuple[ChunkEmbedding, float, Dict[str, Any]]]:
+        """
+        Search similar embeddings using cosine distance for documents
+
+        Args:
+            query_embedding: Embedding of the query
+            limit: Maximum number of results
+            similarity_threshold: Minimum similarity threshold
+            session: Database session
+
+        Returns:
+            List of tuples (ChunkEmbedding, similarity_score, document_data)
+        """
+        async def _search(session: AsyncSession):
+            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+
+            sql = text("""
+                SELECT
+                    ce.id,
+                    ce.document_id,
+                    ce.chunk_text,
+                    ce.chunk_index,
+                    ce.created_at,
+                    d.question_text,
+                    d.status,
+                    d.file_path,
+                    d.file_name,
+                    1 - (ce.embedding <=> :query_embedding) as similarity
+                FROM chunk_embeddings ce
+                INNER JOIN documents d ON ce.document_id = d.id
+                WHERE 1 - (ce.embedding <=> :query_embedding) >= :threshold
+                AND ce.document_id IS NOT NULL
+                AND d.status = 'APPROVED'
+                ORDER BY ce.embedding <=> :query_embedding
+                LIMIT :limit
+            """)
+
+            result = await session.execute(
+                sql,
+                {
+                    "query_embedding": embedding_str,
+                    "threshold": similarity_threshold,
+                    "limit": limit
+                }
+            )
+
+            results = []
+            for row in result:
+                chunk_embedding = ChunkEmbedding(
+                    id=row.id,
+                    document_id=row.document_id,
+                    chunk_text=row.chunk_text,
+                    chunk_index=row.chunk_index,
+                    created_at=row.created_at
+                )
+
+                document_data = {
+                    'question_text': row.question_text,
+                    'status': row.status,
+                    'file_path': row.file_path,
+                    'file_name': row.file_name
+                }
+
+                results.append((chunk_embedding, float(row.similarity), document_data))
+
+            return results
+
+        if session:
+            return await _search(session)
+        else:
+            async with get_session() as session:
+                return await _search(session)
     
     async def get_question_embeddings(
         self,

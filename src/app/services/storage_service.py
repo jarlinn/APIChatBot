@@ -21,6 +21,7 @@ class StorageService:
 
     def __init__(self):
         self.minio_endpoint = settings.minio_endpoint
+        self.minio_publict_endpoint = settings.minio_public_endpoint
         self.minio_access_key = settings.minio_access_key
         self.minio_secret_key = settings.minio_secret_key
         self.minio_secure = settings.minio_secure
@@ -28,6 +29,13 @@ class StorageService:
 
         self.client = Minio(
             self.minio_endpoint,
+            access_key=self.minio_access_key,
+            secret_key=self.minio_secret_key,
+            secure=self.minio_secure
+        )
+
+        self.client_public = Minio(
+            self.minio_publict_endpoint,
             access_key=self.minio_access_key,
             secret_key=self.minio_secret_key,
             secure=self.minio_secure
@@ -109,7 +117,7 @@ class StorageService:
 
             # Always use the regular client for URL generation
             # The external endpoint is handled by the MinIO server configuration
-            url = self.client.presigned_get_object(
+            url = self.client_public.presigned_get_object(
                 bucket_name=self.bucket_name,
                 object_name=object_name,
                 expires=timedelta(hours=expires_in_hours)

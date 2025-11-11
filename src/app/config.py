@@ -25,11 +25,11 @@ class Settings(BaseSettings):
     
     # MinIO/S3
     minio_endpoint: str = Field(env="MINIO_ENDPOINT")
+    minio_public_endpoint: str = Field(env="MINIO_PUBLIC_ENDPOINT")
     minio_access_key: str = Field(env="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(env="MINIO_SECRET_KEY")
     minio_bucket_name: str = Field(env="MINIO_BUCKET_NAME")
     minio_secure: bool = Field(env="MINIO_SECURE")
-    minio_external_endpoint: Optional[str] = Field(default=None, env="MINIO_EXTERNAL_ENDPOINT")
 
     # N8N
     n8n_webhook: Optional[str] = Field(default=None, env="N8N_WEBHOOK")

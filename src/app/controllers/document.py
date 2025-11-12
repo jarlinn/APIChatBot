@@ -5,6 +5,7 @@ Controllers for Documents
 import math
 from typing import Optional
 import logging
+import mimetypes
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -123,11 +124,14 @@ async def create_document(
 
         # Create document
         async for session in get_async_session():
+            ext = mimetypes.guess_extension(file.content_type)
+            file_type = ext[1:].lower() if ext else (file.filename.split('.')[-1].lower() if '.' in file.filename else 'unknown')
+
             doc = Document(
                 question_text=question_text,
                 file_path=file_path,
                 file_name=file.filename,
-                file_type=file.content_type,
+                file_type=file_type,
                 modality_id=modality_id,
                 submodality_id=submodality_id if submodality_id else None,
                 category_id=category_id if category_id else None,
@@ -405,7 +409,8 @@ async def update_document(
                 # Actualizar campos del archivo
                 document.file_path = new_file_path
                 document.file_name = file.filename
-                document.file_type = file.content_type
+                ext = mimetypes.guess_extension(file.content_type)
+                document.file_type = ext[1:].lower() if ext else (file.filename.split('.')[-1].lower() if '.' in file.filename else 'unknown')
                 logger.info(f"New file uploaded for document {document_id}: {new_file_path}")
 
             # Actualizar campos si se proporcionan

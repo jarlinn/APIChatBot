@@ -41,7 +41,7 @@ async def get_submodalities(
         if modality_id:
             query = query.where(Submodality.modality_id == modality_id)
 
-        query = query.offset(skip).limit(limit).order_by(Submodality.name)
+        query = query.offset(skip).limit(limit).order_by(Submodality.modality_id, Submodality.name)
 
         result = await session.execute(query)
         submodalities = result.scalars().all()

@@ -130,14 +130,20 @@ async def create_question(
                 category = await session.get(Category, category_id)
                 if not category:
                     raise HTTPException(status_code=404, detail="Category not found")
-                # Validate category belongs to submodality (if submodality is specified)
-                if submodality_id and category.submodality_id != submodality_id:
+                # Validate category belongs to modality
+                if category.modality_id != modality_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Category does not belong to the specified modality",
+                    )
+                # Validate category belongs to submodality (if both have submodality)
+                if submodality_id and category.submodality_id and category.submodality_id != submodality_id:
                     raise HTTPException(
                         status_code=400,
                         detail="Category does not belong to the specified submodality",
                     )
-                # If no submodality specified but category exists, auto-set submodality
-                if not submodality_id:
+                # If no submodality specified but category has submodality, auto-set submodality
+                if not submodality_id and category.submodality_id:
                     submodality_id = category.submodality_id
                     submodality = await session.get(
                         Submodality, category.submodality_id
@@ -492,14 +498,20 @@ async def update_question(
                 category = await session.get(Category, category_id)
                 if not category:
                     raise HTTPException(status_code=404, detail="Category not found")
-                # Validate category belongs to current submodality
+                # Validate category belongs to current modality
+                if category.modality_id != question.modality_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Category does not belong to the current modality",
+                    )
+                # Validate category belongs to current submodality (if both have submodality)
                 current_submodality_id = question.submodality_id
-                if current_submodality_id and category.submodality_id != current_submodality_id:
+                if current_submodality_id and category.submodality_id and category.submodality_id != current_submodality_id:
                     raise HTTPException(
                         status_code=400,
                         detail="Category does not belong to the current submodality",
                     )
-                # If no submodality but category exists, auto-set submodality
+                # If no submodality but category has submodality, auto-set submodality
                 if not current_submodality_id and category.submodality_id:
                     question.submodality_id = category.submodality_id
                     logger.info(f"Auto-set submodality to {category.submodality_id} for category {category_id}")

@@ -5,7 +5,7 @@ Schemas for Category
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CategoryBase(BaseModel):
@@ -13,20 +13,29 @@ class CategoryBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Name of the category")
     slug: str = Field(..., min_length=1, max_length=255, description="Slug of the category")
     description: Optional[str] = Field(None, description="Description of the category")
-    submodality_id: str = Field(..., description="ID of the parent submodality")
+    modality_id: Optional[str] = Field(None, description="ID of the parent modality (if direct)")
+    submodality_id: Optional[str] = Field(None, description="ID of the parent submodality")
 
 
 class CategoryCreate(BaseModel):
     """Schema for creating a category"""
     name: str = Field(..., min_length=1, max_length=255, description="Name of the category")
     description: Optional[str] = Field(None, description="Description of the category")
-    submodality_id: str = Field(..., description="ID of the parent submodality")
+    modality_id: Optional[str] = Field(None, description="ID of the parent modality (if direct)")
+    submodality_id: Optional[str] = Field(None, description="ID of the parent submodality")
+
+    @model_validator(mode='after')
+    def check_parent(self):
+        if not self.modality_id and not self.submodality_id:
+            raise ValueError("Either modality_id or submodality_id must be provided")
+        return self
 
 
 class CategoryUpdate(BaseModel):
     """Schema for updating a category"""
     name: Optional[str] = Field(None, min_length=1, max_length=255, description="Name of the category")
     description: Optional[str] = Field(None, description="Description of the category")
+    modality_id: Optional[str] = Field(None, description="ID of the parent modality (if direct)")
     submodality_id: Optional[str] = Field(None, description="ID of the parent submodality")
 
 

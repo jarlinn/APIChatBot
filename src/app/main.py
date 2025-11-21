@@ -12,6 +12,7 @@ from src.app.controllers.submodality import router as submodality_router
 from src.app.controllers.category import router as category_router
 from src.app.controllers.profile import router as profile_router
 from src.app.controllers.chatbot_config import router as chatbot_config_router
+from src.app.controllers.job_pending_questions import router as job_pending_questions_router
 from src.app.middlewares.logging_middleware import logging_middleware
 from src.app.utils.error_handlers import (
     validation_exception_handler,
@@ -55,6 +56,7 @@ app.include_router(submodality_router, prefix="/chat")
 app.include_router(category_router, prefix="/chat")
 app.include_router(profile_router)
 app.include_router(chatbot_config_router, prefix="/chat")
+app.include_router(job_pending_questions_router, prefix="/jobs")
 
 
 @app.get("/health")

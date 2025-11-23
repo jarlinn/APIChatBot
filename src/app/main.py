@@ -1,8 +1,9 @@
 """main module"""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from prometheus_client import generate_latest
 
 from src.app.controllers.auth import router as auth_router
 from src.app.controllers.question import router as question_router
@@ -12,6 +13,7 @@ from src.app.controllers.submodality import router as submodality_router
 from src.app.controllers.category import router as category_router
 from src.app.controllers.profile import router as profile_router
 from src.app.controllers.chatbot_config import router as chatbot_config_router
+from src.app.controllers.report import router as report_router
 from src.app.middlewares.logging_middleware import logging_middleware
 from src.app.utils.error_handlers import (
     validation_exception_handler,
@@ -20,7 +22,12 @@ from src.app.utils.error_handlers import (
     custom_http_exception_handler
 )
 from src.app.schemas.error import CustomHTTPException
+from src.app.utils.metrics import (
+    REQUEST_COUNT,
+    REQUEST_LATENCY
+)
 from src.app.config import settings
+
 
 app = FastAPI(
     title="APIChatBot",
@@ -46,6 +53,16 @@ app.add_middleware(
 # Logging middleware
 app.middleware("http")(logging_middleware)
 
+# Prometheus middleware for request metrics
+@app.middleware("http")
+async def prometheus_middleware(request, call_next):
+    method = request.method
+    endpoint = request.url.path
+    with REQUEST_LATENCY.labels(method=method, endpoint=endpoint).time():
+        response = await call_next(request)
+        REQUEST_COUNT.labels(method=method, endpoint=endpoint, status_code=response.status_code).inc()
+        return response
+
 # Include routers
 app.include_router(auth_router)
 app.include_router(question_router, prefix="/chat")
@@ -55,11 +72,16 @@ app.include_router(submodality_router, prefix="/chat")
 app.include_router(category_router, prefix="/chat")
 app.include_router(profile_router)
 app.include_router(chatbot_config_router, prefix="/chat")
+app.include_router(report_router, prefix="/chat")
 
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+@app.get("/metrics")
+async def metrics():
+    return Response(media_type="text/plain", content=generate_latest())
 
 if __name__ == "__main__":
     import uvicorn

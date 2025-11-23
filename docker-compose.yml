@@ -51,9 +51,12 @@ services:
 
       - ALLOWED_ORIGINS=*
 
+      - PROMETHEUS_URL=http://prometheus:9090
+
     depends_on:
       - db
       - minio
+      - prometheus
     command: python -m uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - chatbot-network
@@ -109,16 +112,39 @@ services:
       timeout: 5s
       retries: 5
     command: >
-      postgres 
+      postgres
       -c shared_preload_libraries=vector
       -c log_statement=all
       -c log_destination=stderr
 
+  # Prometheus para métricas
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: chatbot-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - chatbot-network
+    restart: unless-stopped
+
+
 volumes:
-  minio_data:
-    driver: local
-  postgres_data:
-    driver: local
+   minio_data:
+     driver: local
+   postgres_data:
+     driver: local
+   prometheus_data:
+     driver: local
   # redis_data:
   #   driver: local
 
@@ -170,5 +196,8 @@ networks:
 # 
 # MinIO API:
 #   - URL: http://localhost:9000
-# 
+#
+# Prometheus:
+#   - URL: http://localhost:9090
+#
 # =============================================================================

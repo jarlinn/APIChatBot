@@ -37,7 +37,7 @@ torch = { version = "2.2.2+cpu", source = "pytorch-cpu" }
 prometheus-client = "^0.21.0"
 matplotlib = "3.9.2"
 seaborn = "0.13.2"
-weasyprint = "63.1"
+reportlab = "4.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

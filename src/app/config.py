@@ -46,7 +46,10 @@ class Settings(BaseSettings):
 
     # Default Admin
     admin_view: str = Field(default="", env="ADMIN_VIEW_TOKEN")
-    
+
+    # Prometheus
+    prometheus_url: str = Field(default="http://localhost:9090", env="PROMETHEUS_URL")
+
     # CORS
     allowed_origins: str = Field(default="*", env="ALLOWED_ORIGINS")
     

@@ -3,7 +3,8 @@ Email service with support for Console and sendgrid (HTTPS API) providers
 """
 
 import os
-from typing import Optional, Dict, Any
+import base64
+from typing import Optional, Dict, Any, List
 import logging
 from enum import Enum
 
@@ -43,8 +44,8 @@ class EmailService:
         logger.info("📧 Email service initialized with provider: %s", self.provider.value)
 
     def _print_console_email(
-        self, to_email: str, subject: str, html_content: str, 
-        text_content: Optional[str] = None
+        self, to_email: str, subject: str, html_content: str,
+        text_content: Optional[str] = None, attachments: Optional[List[Dict[str, Any]]] = None
     ):
         """Print email to console for development"""
         print("\n" + "="*80)
@@ -63,9 +64,19 @@ class EmailService:
             print("-"*80)
             print("📝 TEXT CONTENT:")
             print(
-                text_content[:300] + "..." if len(text_content) > 300 
+                text_content[:300] + "..." if len(text_content) > 300
                 else text_content
             )
+
+        if attachments:
+            print("-"*80)
+            print("📎 ATTACHMENTS:")
+            for i, attachment in enumerate(attachments, 1):
+                filename = attachment.get('filename', 'unknown')
+                content_type = attachment.get('content_type', 'unknown')
+                size = len(attachment.get('content', b''))
+                print(f"  {i}. {filename} ({content_type}) - {size} bytes")
+
         print("="*80)
         logger.info("📧 Email displayed in console for %s", to_email)
     
@@ -74,31 +85,38 @@ class EmailService:
         to_email: str,
         subject: str,
         html_content: str,
-        text_content: Optional[str] = None
+        text_content: Optional[str] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
     ) -> bool:
         """
         Send email using configured provider
-        
+
         Args:
             to_email: Recipient email address
             subject: Email subject
             html_content: HTML email content
             text_content: Plain text email content (optional)
-            
+            attachments: List of attachments (optional)
+                Each attachment should be a dict with:
+                - 'filename': str - Name of the file
+                - 'content': bytes - File content
+                - 'content_type': str - MIME type (optional, defaults to 'application/octet-stream')
+
         Returns:
             bool: True if email was sent successfully, False otherwise
         """
         try:
             # Handle console mode
             if self.provider == EmailProvider.CONSOLE:
-                self._print_console_email(to_email, subject, html_content, text_content)
+                self._print_console_email(to_email, subject, html_content, text_content, attachments)
                 return True
             # Handle SendGrid provider (HTTPS API)
             success = await self._send_sendgrid_email(
                 to_email=to_email,
                 subject=subject,
                 html_content=html_content,
-                text_content=text_content
+                text_content=text_content,
+                attachments=attachments
             )
             if success:
                 logger.info("Email sent successfully to %s via %s", to_email, self.provider.value)
@@ -122,7 +140,8 @@ class EmailService:
         to_email: str,
         subject: str,
         html_content: str,
-        text_content: Optional[str]
+        text_content: Optional[str],
+        attachments: Optional[List[Dict[str, Any]]] = None
     ) -> bool:
         """Send email via SendGrid HTTPS API"""
         config = self._get_provider_config(EmailProvider.SENDGRID)
@@ -144,6 +163,19 @@ class EmailService:
             "from": {"email": config["from_email"], "name": self.from_name},
             "content": content
         }
+
+        # Add attachments if provided
+        if attachments:
+            sendgrid_attachments = []
+            for attachment in attachments:
+                attachment_data = {
+                    "content": base64.b64encode(attachment["content"]).decode('utf-8'),
+                    "filename": attachment["filename"],
+                    "type": attachment.get("content_type", "application/octet-stream"),
+                    "disposition": "attachment"
+                }
+                sendgrid_attachments.append(attachment_data)
+            payload["attachments"] = sendgrid_attachments
 
         headers = {
             "Authorization": f"Bearer {config['api_key']}",
@@ -587,6 +619,79 @@ Si no cambias la contraseña temporal, tu cuenta podría estar en riesgo.
 
         except Exception as e:
             logger.error("Error sending email change confirmation to %s: %s", to_email, str(e))
+            return False
+
+    async def send_frequent_questions_report(
+        self,
+        to_email: str,
+        pdf_filename: str,
+        pdf_content: bytes,
+        report_period: str
+    ) -> bool:
+        """
+        Send frequent questions report to a user
+
+        Args:
+            to_email: User email address
+            pdf_filename: Name of the PDF file
+            pdf_content: PDF content as bytes
+            report_period: Description of the report period
+
+        Returns:
+            bool: True if email was sent successfully
+        """
+        try:
+            subject = f"📊 Reporte Quincenal - Preguntas Más Frecuentes - {report_period}"
+
+            html_content = f"""
+            <html>
+            <body>
+                <h2>Reporte Quincenal de Preguntas Más Frecuentes</h2>
+                <p>Se ha generado el reporte quincenal de preguntas más frecuentes del ChatBot UFPS.</p>
+                <p><strong>Período:</strong> {report_period}</p>
+                <p>El reporte PDF está adjunto a este correo electrónico.</p>
+                <br>
+                <p>Atentamente,<br>Sistema ChatBot UFPS</p>
+            </body>
+            </html>
+            """
+
+            text_content = f"""
+Reporte Quincenal de Preguntas Más Frecuentes
+
+Se ha generado el reporte quincenal de preguntas más frecuentes del ChatBot UFPS.
+
+Período: {report_period}
+
+El reporte PDF está adjunto a este correo electrónico.
+
+Atentamente,
+Sistema ChatBot UFPS
+            """.strip()
+
+            attachments = [{
+                "filename": pdf_filename,
+                "content": pdf_content,
+                "content_type": "application/pdf"
+            }]
+
+            success = await self.send_email(
+                to_email=to_email,
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+                attachments=attachments
+            )
+
+            if success:
+                logger.info(f"Report sent successfully to user: {to_email}")
+            else:
+                logger.error(f"Failed to send report to user: {to_email}")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error sending frequent questions report to {to_email}: {str(e)}")
             return False
 
 

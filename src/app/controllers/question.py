@@ -10,7 +10,6 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, Depends
 from fastapi.responses import StreamingResponse
-from sympy import im
 
 from src.app.db.session import get_async_session
 from src.app.models import Question, Category, Modality, Submodality
@@ -30,6 +29,7 @@ from src.app.services.gemini_service import gemini_service
 from src.app.dependencies.auth import get_current_active_user
 from src.app.config import settings
 from src.app.utils.questions_utils import delete_file_if_exists
+from src.app.utils.metrics import FREQUENT_QUESTIONS_COUNT
 
 logger = logging.getLogger(__name__)
 
@@ -837,6 +837,33 @@ async def search_similarity(
                 question_status=question_data.get("status"),
             )
             similar_chunks.append(similar_chunk)
+
+        # Record frequent question metric if similar questions found
+        if similar_chunks:
+            best_chunk = similar_chunks[0]
+            # Load question with relationships to get hierarchy names
+            result = await session.execute(
+                select(Question)
+                .where(Question.id == best_chunk.question_id)
+                .options(
+                    selectinload(Question.modality),
+                    selectinload(Question.submodality),
+                    selectinload(Question.category),
+                )
+            )
+            question = result.scalar_one_or_none()
+            if question:
+                modality_name = question.modality.name if question.modality else "unknown"
+                submodality_name = question.submodality.name if question.submodality else "none"
+                category_name = question.category.name if question.category else "none"
+                FREQUENT_QUESTIONS_COUNT.labels(
+                    question_id=str(question.id),
+                    question_text=question.question_text,  # Truncate for label
+                    modality=modality_name,
+                    submodality=submodality_name,
+                    category=category_name,
+                    similarity_score=str(best_chunk.similarity_score)
+                ).inc()
 
         best_similarity = similar_chunks[0].similarity_score if similar_chunks else 0
         message = f"Found {len(similar_chunks)} similar questions. The best similarity is {best_similarity:.2%}."

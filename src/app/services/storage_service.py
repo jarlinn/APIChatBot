@@ -180,10 +180,10 @@ class StorageService:
     def file_exists(self, object_name: str) -> bool:
         """
         Verify if a file exists in MinIO/S3
-        
+
         Args:
             object_name: Name of the object to verify
-            
+
         Returns:
             bool: True if the file exists
         """
@@ -195,6 +195,50 @@ class StorageService:
             return True
         except S3Error:
             return False
+
+    def upload_bytes(self, data: bytes, filename: str, folder: str = "reports", content_type: str = "application/pdf") -> str:
+        """
+        Upload bytes data to MinIO/S3
+
+        Args:
+            data: Bytes data to upload
+            filename: Original filename (used for extension)
+            folder: Folder where to save the file
+            content_type: Content type of the file
+
+        Returns:
+            str: Name of the object in MinIO (path of the file)
+        """
+        try:
+            # Use the filename as provided, but ensure it's unique by adding UUID prefix
+            unique_filename = f"{uuid.uuid4()}_{filename}"
+            object_name = f"{folder}/{unique_filename}"
+
+            file_size = len(data)
+
+            self.client.put_object(
+                bucket_name=self.bucket_name,
+                object_name=object_name,
+                data=io.BytesIO(data),
+                length=file_size,
+                content_type=content_type
+            )
+
+            logger.info(f"Bytes uploaded successfully: {object_name}")
+            return object_name
+
+        except S3Error as e:
+            logger.error(f"Error uploading bytes: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error uploading file: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error uploading bytes: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Internal error: {str(e)}"
+            )
 
 
 storage_service = StorageService()

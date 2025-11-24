@@ -3,6 +3,7 @@ Graph generation service using matplotlib and seaborn
 """
 import logging
 import io
+import textwrap
 from typing import Any, List, Dict
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -47,8 +48,8 @@ class GraphService:
             # Prepare data
             df = pd.DataFrame(questions_data)
 
-            # Create figure with better size for PDF
-            plt.figure(figsize=(12, 8))
+            # Create figure with better size for PDF and long texts
+            plt.figure(figsize=(16, max(10, len(df) * 1.2)))  # More width and dynamic height
 
             # Create horizontal bar chart (better for long question texts)
             bars = plt.barh(
@@ -57,11 +58,25 @@ class GraphService:
                 color=sns.color_palette("husl", len(df))
             )
 
-            # Add question texts as y-axis labels
+            # Wrap long question texts into multiple lines for better readability
+            wrapped_labels = []
+            for question in df['question_text']:
+                if len(question) > 40:
+                    # Wrap text to 40 characters per line, max 3 lines
+                    wrapped = textwrap.wrap(question[:120], width=40)  # Limit total chars to 120
+                    if len(wrapped) > 3:
+                        wrapped = wrapped[:3]
+                        wrapped[-1] += "..."
+                    wrapped_labels.append("\n".join(wrapped))
+                else:
+                    wrapped_labels.append(question)
+
+            # Add wrapped question texts as y-axis labels
             plt.yticks(
                 range(len(df)),
-                [q[:50] + "..." if len(q) > 50 else q for q in df['question_text']],
-                fontsize=10
+                wrapped_labels,
+                fontsize=9,
+                ha='right'
             )
 
             # Add value labels on bars
@@ -120,24 +135,44 @@ class GraphService:
             # Prepare data
             df = pd.DataFrame(questions_data)
 
-            # Create figure
-            plt.figure(figsize=(10, 8))
+            # Create figure with better size for pie chart and legend
+            plt.figure(figsize=(14, 10))
 
-            # Create pie chart
-            wedges, texts, autotexts = plt.pie(
+            # Create pie chart without labels (to avoid text overlap with long questions)
+            # Only show percentages inside the slices
+            wedges, autotexts = plt.pie(
                 df['count'],
-                labels=[q[:30] + "..." if len(q) > 30 else q for q in df['question_text']],
+                labels=[''] * len(df),  # Empty strings for each slice to avoid overlap
                 autopct='%1.1f%%',
                 startangle=90,
-                colors=sns.color_palette("husl", len(df))
+                colors=sns.color_palette("husl", len(df)),
+                pctdistance=0.85  # Position percentages closer to center
             )
 
-            # Improve text styling
-            for text in texts:
-                text.set_fontsize(9)
+            # Improve percentage text styling
             for autotext in autotexts:
-                autotext.set_fontsize(9)
+                autotext.set_fontsize(11)
                 autotext.set_fontweight('bold')
+                autotext.set_color('white')  # White text on colored background
+
+            # Add legend with truncated question texts
+            legend_labels = []
+            for question in df['question_text']:
+                if len(question) > 25:
+                    # Truncate and add ellipsis
+                    truncated = question[:22] + "..."
+                    legend_labels.append(truncated)
+                else:
+                    legend_labels.append(question)
+
+            plt.legend(
+                wedges,
+                legend_labels,
+                title="Preguntas",
+                loc="center left",
+                bbox_to_anchor=(1, 0, 0.5, 1),
+                fontsize=9
+            )
 
             plt.title(title, fontsize=14, fontweight='bold', pad=20)
             plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
@@ -184,23 +219,33 @@ class GraphService:
             category_counts = df.groupby('category')['count'].sum().reset_index()
             category_counts = category_counts.sort_values('count', ascending=False)
 
-            # Create figure
-            plt.figure(figsize=(12, 6))
+            # Create compact figure for PDF
+            plt.figure(figsize=(6, 4))  # More compact: smaller overall
 
-            # Create bar chart
+            # Create bar chart with thinner bars
             bars = plt.bar(
                 range(len(category_counts)),
                 category_counts['count'],
-                color=sns.color_palette("husl", len(category_counts))
+                color=sns.color_palette("husl", len(category_counts)),
+                width=0.6  # Thinner bars for more compact look
             )
 
-            # Add category labels
+            # Add category labels with text wrapping for long category names
+            category_labels = []
+            for category in category_counts['category']:
+                if len(str(category)) > 15:
+                    # Wrap long category names
+                    wrapped = textwrap.wrap(str(category), width=15)
+                    category_labels.append("\n".join(wrapped))
+                else:
+                    category_labels.append(str(category))
+
             plt.xticks(
                 range(len(category_counts)),
-                category_counts['category'],
+                category_labels,
                 rotation=45,
                 ha='right',
-                fontsize=10
+                fontsize=9
             )
 
             # Add value labels on bars
@@ -224,7 +269,7 @@ class GraphService:
 
             # Save to bytes
             buf = io.BytesIO()
-            plt.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
             buf.seek(0)
             image_bytes = buf.getvalue()
 
@@ -234,6 +279,180 @@ class GraphService:
 
         except Exception as e:
             logger.error(f"Error generating category chart: {str(e)}")
+            return self._generate_empty_chart()
+
+    def generate_modality_distribution_chart(
+        self,
+        questions_data: List[Dict[str, Any]],
+        title: str = "Distribución por Modalidad"
+    ) -> bytes:
+        """
+        Generate a chart showing distribution by modality
+
+        Args:
+            questions_data: List of dicts with modality and count
+            title: Chart title
+
+        Returns:
+            PNG image as bytes
+        """
+        try:
+            if not questions_data:
+                logger.warning("No questions data provided for modality chart generation")
+                return self._generate_empty_chart()
+
+            # Group by modality
+            df = pd.DataFrame(questions_data)
+            modality_counts = df.groupby('modality')['count'].sum().reset_index()
+            modality_counts = modality_counts.sort_values('count', ascending=False)
+
+            # Create compact figure for PDF
+            plt.figure(figsize=(6, 4))  # More compact: smaller overall
+
+            # Create bar chart with thinner bars
+            bars = plt.bar(
+                range(len(modality_counts)),
+                modality_counts['count'],
+                color=sns.color_palette("husl", len(modality_counts)),
+                width=0.6  # Thinner bars for more compact look
+            )
+
+            # Add modality labels with text wrapping for long modality names
+            modality_labels = []
+            for modality in modality_counts['modality']:
+                if len(str(modality)) > 15:
+                    # Wrap long modality names
+                    wrapped = textwrap.wrap(str(modality), width=15)
+                    modality_labels.append("\n".join(wrapped))
+                else:
+                    modality_labels.append(str(modality))
+
+            plt.xticks(
+                range(len(modality_counts)),
+                modality_labels,
+                rotation=45,
+                ha='right',
+                fontsize=9
+            )
+
+            # Add value labels on bars
+            for bar, count in zip(bars, modality_counts['count']):
+                plt.text(
+                    bar.get_x() + bar.get_width()/2,
+                    bar.get_height() + max(modality_counts['count']) * 0.01,
+                    f'{int(count)}',
+                    ha='center',
+                    va='bottom',
+                    fontsize=10,
+                    fontweight='bold'
+                )
+
+            plt.xlabel('Modalidad', fontsize=12, fontweight='bold')
+            plt.ylabel('Número Total de Preguntas', fontsize=12, fontweight='bold')
+            plt.title(title, fontsize=14, fontweight='bold', pad=20)
+
+            # Adjust layout
+            plt.tight_layout()
+
+            # Save to bytes
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            image_bytes = buf.getvalue()
+
+            plt.close()
+            logger.info(f"Generated modality distribution chart with {len(modality_counts)} modalities")
+            return image_bytes
+
+        except Exception as e:
+            logger.error(f"Error generating modality chart: {str(e)}")
+            return self._generate_empty_chart()
+
+    def generate_submodality_distribution_chart(
+        self,
+        questions_data: List[Dict[str, Any]],
+        title: str = "Distribución por Submodalidad"
+    ) -> bytes:
+        """
+        Generate a chart showing distribution by submodality
+
+        Args:
+            questions_data: List of dicts with submodality and count
+            title: Chart title
+
+        Returns:
+            PNG image as bytes
+        """
+        try:
+            if not questions_data:
+                logger.warning("No questions data provided for submodality chart generation")
+                return self._generate_empty_chart()
+
+            # Group by submodality
+            df = pd.DataFrame(questions_data)
+            submodality_counts = df.groupby('submodality')['count'].sum().reset_index()
+            submodality_counts = submodality_counts.sort_values('count', ascending=False)
+
+            # Create compact figure for PDF
+            plt.figure(figsize=(6, 4))  # More compact: smaller overall
+
+            # Create bar chart with thinner bars
+            bars = plt.bar(
+                range(len(submodality_counts)),
+                submodality_counts['count'],
+                color=sns.color_palette("husl", len(submodality_counts)),
+                width=0.6  # Thinner bars for more compact look
+            )
+
+            # Add submodality labels with text wrapping for long submodality names
+            submodality_labels = []
+            for submodality in submodality_counts['submodality']:
+                if len(str(submodality)) > 15:
+                    # Wrap long submodality names
+                    wrapped = textwrap.wrap(str(submodality), width=15)
+                    submodality_labels.append("\n".join(wrapped))
+                else:
+                    submodality_labels.append(str(submodality))
+
+            plt.xticks(
+                range(len(submodality_counts)),
+                submodality_labels,
+                rotation=45,
+                ha='right',
+                fontsize=9
+            )
+
+            # Add value labels on bars
+            for bar, count in zip(bars, submodality_counts['count']):
+                plt.text(
+                    bar.get_x() + bar.get_width()/2,
+                    bar.get_height() + max(submodality_counts['count']) * 0.01,
+                    f'{int(count)}',
+                    ha='center',
+                    va='bottom',
+                    fontsize=10,
+                    fontweight='bold'
+                )
+
+            plt.xlabel('Submodalidad', fontsize=12, fontweight='bold')
+            plt.ylabel('Número Total de Preguntas', fontsize=12, fontweight='bold')
+            plt.title(title, fontsize=14, fontweight='bold', pad=20)
+
+            # Adjust layout
+            plt.tight_layout()
+
+            # Save to bytes
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            buf.seek(0)
+            image_bytes = buf.getvalue()
+
+            plt.close()
+            logger.info(f"Generated submodality distribution chart with {len(submodality_counts)} submodalities")
+            return image_bytes
+
+        except Exception as e:
+            logger.error(f"Error generating submodality chart: {str(e)}")
             return self._generate_empty_chart()
 
     def _generate_empty_chart(self) -> bytes:

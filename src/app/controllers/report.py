@@ -17,13 +17,15 @@ router = APIRouter()
 async def generate_frequent_questions_report(
     days: int = Query(7, ge=1, le=365, description="Number of days to look back for data"),
     include_category_chart: bool = Query(True, description="Include category distribution chart"),
+    include_modality_chart: bool = Query(True, description="Include modality distribution chart"),
+    include_submodality_chart: bool = Query(True, description="Include submodality distribution chart"),
 ):
     """
     Generate frequent questions report, save to MinIO and send via email.
 
     This endpoint:
     1. Queries Prometheus for frequent questions metrics
-    2. Generates charts (bar chart, pie chart, optional category chart)
+    2. Generates charts (bar chart, pie chart, optional category/modality/submodality charts)
     3. Creates a professional PDF report
     4. Saves PDF to MinIO storage
     5. Sends PDF via email to administrators
@@ -32,6 +34,8 @@ async def generate_frequent_questions_report(
     Args:
         days: Number of days to analyze (1-365)
         include_category_chart: Whether to include category distribution chart
+        include_modality_chart: Whether to include modality distribution chart
+        include_submodality_chart: Whether to include submodality distribution chart
         current_user: Authenticated user
 
     Returns:
@@ -47,7 +51,9 @@ async def generate_frequent_questions_report(
         # 1. Generate the PDF report
         pdf_bytes = await report_service.generate_frequent_questions_report(
             days=days,
-            include_category_chart=include_category_chart
+            include_category_chart=include_category_chart,
+            include_modality_chart=include_modality_chart,
+            include_submodality_chart=include_submodality_chart
         )
 
         if not pdf_bytes:
@@ -148,6 +154,8 @@ async def generate_frequent_questions_report(
 async def generate_frequent_questions_report_download(
     days: int = Query(7, ge=1, le=365, description="Number of days to look back for data"),
     include_category_chart: bool = Query(True, description="Include category distribution chart"),
+    include_modality_chart: bool = Query(True, description="Include modality distribution chart"),
+    include_submodality_chart: bool = Query(True, description="Include submodality distribution chart"),
     current_user=Depends(get_current_active_user),
 ):
     """
@@ -155,7 +163,7 @@ async def generate_frequent_questions_report_download(
 
     This endpoint:
     1. Queries Prometheus for frequent questions metrics
-    2. Generates charts (bar chart, pie chart, optional category chart)
+    2. Generates charts (bar chart, pie chart, optional category/modality/submodality charts)
     3. Creates a professional PDF report
     4. Saves PDF to MinIO storage
     5. Returns a signed download URL (expires in 1 hour)
@@ -163,6 +171,8 @@ async def generate_frequent_questions_report_download(
     Args:
         days: Number of days to analyze (1-365)
         include_category_chart: Whether to include category distribution chart
+        include_modality_chart: Whether to include modality distribution chart
+        include_submodality_chart: Whether to include submodality distribution chart
         current_user: Authenticated user
 
     Returns:
@@ -176,7 +186,9 @@ async def generate_frequent_questions_report_download(
         # 1. Generate the PDF report
         pdf_bytes = await report_service.generate_frequent_questions_report(
             days=days,
-            include_category_chart=include_category_chart
+            include_category_chart=include_category_chart,
+            include_modality_chart=include_modality_chart,
+            include_submodality_chart=include_submodality_chart
         )
 
         if not pdf_bytes:

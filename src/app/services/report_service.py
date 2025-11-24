@@ -20,7 +20,9 @@ class ReportService:
     async def generate_frequent_questions_report(
         self,
         days: int = 7,
-        include_category_chart: bool = True
+        include_category_chart: bool = True,
+        include_modality_chart: bool = True,
+        include_submodality_chart: bool = True
     ) -> bytes:
         """
         Generate a complete frequent questions report
@@ -28,6 +30,8 @@ class ReportService:
         Args:
             days: Number of days to look back for data
             include_category_chart: Whether to include category distribution chart
+            include_modality_chart: Whether to include modality distribution chart
+            include_submodality_chart: Whether to include submodality distribution chart
 
         Returns:
             PDF report as bytes
@@ -60,12 +64,28 @@ class ReportService:
                     title=f"Distribución por Categoría (Últimos {days} días)"
                 )
 
+            modality_chart_bytes = None
+            if include_modality_chart and questions_data:
+                modality_chart_bytes = graph_service.generate_modality_distribution_chart(
+                    questions_data=questions_data,
+                    title=f"Distribución por Modalidad (Últimos {days} días)"
+                )
+
+            submodality_chart_bytes = None
+            if include_submodality_chart and questions_data:
+                submodality_chart_bytes = graph_service.generate_submodality_distribution_chart(
+                    questions_data=questions_data,
+                    title=f"Distribución por Submodalidad (Últimos {days} días)"
+                )
+
             # 3. Generate PDF
             pdf_bytes = pdf_service.generate_frequent_questions_report(
                 questions_data=questions_data,
                 bar_chart_bytes=bar_chart_bytes,
                 pie_chart_bytes=pie_chart_bytes,
                 category_chart_bytes=category_chart_bytes,
+                modality_chart_bytes=modality_chart_bytes,
+                submodality_chart_bytes=submodality_chart_bytes,
                 report_period_days=days
             )
 

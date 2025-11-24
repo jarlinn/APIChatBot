@@ -53,6 +53,8 @@ class PDFService:
         bar_chart_bytes: bytes,
         pie_chart_bytes: bytes,
         category_chart_bytes: Optional[bytes] = None,
+        modality_chart_bytes: Optional[bytes] = None,
+        submodality_chart_bytes: Optional[bytes] = None,
         report_period_days: int = 7
     ) -> bytes:
         """
@@ -63,6 +65,8 @@ class PDFService:
             bar_chart_bytes: Bar chart image bytes
             pie_chart_bytes: Pie chart image bytes
             category_chart_bytes: Category distribution chart bytes (optional)
+            modality_chart_bytes: Modality distribution chart bytes (optional)
+            submodality_chart_bytes: Submodality distribution chart bytes (optional)
             report_period_days: Number of days the report covers
 
         Returns:
@@ -115,70 +119,58 @@ class PDFService:
 
             # Charts section
             if questions_data:
-                # Bar chart
+                # Charts section
                 story.append(Paragraph("📊 Top 5 Preguntas Más Frecuentes", self.section_title_style))
                 bar_img = Image(BytesIO(bar_chart_bytes), width=6*inch, height=4*inch)
                 story.append(bar_img)
                 story.append(Spacer(1, 20))
 
-                # Pie chart
-                story.append(Paragraph("🥧 Distribución de Preguntas Frecuentes", self.section_title_style))
-                pie_img = Image(BytesIO(pie_chart_bytes), width=6*inch, height=4*inch)
-                story.append(pie_img)
-                story.append(Spacer(1, 20))
-
                 # Category chart (if available)
                 if category_chart_bytes:
                     story.append(Paragraph("📊 Distribución por Categoría", self.section_title_style))
-                    cat_img = Image(BytesIO(category_chart_bytes), width=6*inch, height=4*inch)
+                    cat_img = Image(BytesIO(category_chart_bytes), width=5*inch, height=3.5*inch)
                     story.append(cat_img)
-                    story.append(Spacer(1, 30))
+                    story.append(Spacer(1, 15))
 
-                # Detailed table
+                # Modality chart (if available)
+                if modality_chart_bytes:
+                    story.append(Paragraph("🏢 Distribución por Modalidad", self.section_title_style))
+                    mod_img = Image(BytesIO(modality_chart_bytes), width=5*inch, height=3.5*inch)
+                    story.append(mod_img)
+                    story.append(Spacer(1, 15))
+
+                # Submodality chart (if available)
+                if submodality_chart_bytes:
+                    story.append(Paragraph("📂 Distribución por Submodalidad", self.section_title_style))
+                    submod_img = Image(BytesIO(submodality_chart_bytes), width=5*inch, height=3.5*inch)
+                    story.append(submod_img)
+                    story.append(Spacer(1, 20))
+
+
+                # Detailed questions as structured "cards" with labels
                 story.append(Paragraph("📋 Detalle de Preguntas Frecuentes", self.section_title_style))
+                story.append(Spacer(1, 10))
 
-                # Table header
-                table_data = [["#", "Pregunta", "Ocurrencias", "Modalidad", "Submodalidad", "Categoría"]]
-
-                # Table rows
+                # Create formatted "cards" for each question (full text, no character limits)
                 for i, question in enumerate(questions_data, 1):
-                    # Truncate long questions for table
-                    question_text = question['question_text']
-                    if len(question_text) > 50:
-                        question_text = question_text[:47] + "..."
+                    # Format question details as structured card - full text
+                    question_text = question['question_text']  # No truncation
+                    count = int(question['count'])
+                    modality = question.get('modality', 'N/A')
+                    submodality = question.get('submodality', 'N/A')
+                    category = question.get('category', 'N/A')
 
-                    row = [
-                        str(i),
-                        question_text,
-                        str(int(question['count'])),
-                        question.get('modality', 'N/A'),
-                        question.get('submodality', 'N/A'),
-                        question.get('category', 'N/A')
-                    ]
-                    table_data.append(row)
+                    # Create structured card format with full question text
+                    question_card = f"""<b>{i}. Pregunta:</b> {question_text}<br/>
+<b>Ocurrencias:</b> {count}<br/>
+<b>Modalidad:</b> {modality}<br/>
+<b>Submodalidad:</b> {submodality}<br/>
+<b>Categoría:</b> {category}"""
 
-                # Create table
-                col_widths = [0.5*inch, 2.5*inch, 1*inch, 1*inch, 1*inch, 1*inch]
-                questions_table = Table(table_data, colWidths=col_widths)
-
-                # Style the table
-                table_style = TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.blue),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 8),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ])
-                questions_table.setStyle(table_style)
-                story.append(questions_table)
+                    # Add card with proper styling
+                    card_para = Paragraph(question_card, self.normal_style)
+                    story.append(card_para)
+                    story.append(Spacer(1, 12))  # Space between cards
 
             # Footer
             story.append(Spacer(1, 30))

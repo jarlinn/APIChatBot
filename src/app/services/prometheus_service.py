@@ -72,6 +72,7 @@ class PrometheusService:
     async def get_frequent_questions_detailed(self, days: int = 7) -> List[Dict[str, Any]]:
         """
         Get detailed frequent questions data including modality, submodality, category
+        using range queries to get all historical data
 
         Args:
             days: Number of days to look back
@@ -80,35 +81,58 @@ class PrometheusService:
             List of dicts with detailed question information
         """
         try:
-            # Use the same approach as the working query but get all data with labels
-            query = 'sum(frequent_questions_total) by (question_id, question_text, modality, submodality, category)'
-            logger.info(f"Executing detailed query: {query}")
+            # Use range query to get all historical data over the specified period
+            query = 'frequent_questions_total'  # Query simple como en el frontend
+            logger.info(f"Executing range query: {query} for last {days} days")
 
-            # Execute the query
-            result = self.prom.custom_query(query=query)
-            logger.info(f"Detailed query returned {len(result)} results")
+            # Get data for the last N days
+            end_time = parse_datetime("now")
+            start_time = parse_datetime(f"{days}d")
 
-            questions_data = []
-            for item in result:
-                logger.debug(f"Processing detailed result item: {item}")
-                logger.debug(f"Item keys: {item.keys()}")
+            # Query range to get historical data
+            result = self.prom.get_metric_range_data(
+                metric_name='frequent_questions_total',
+                label_config={},  # Get all labels
+                start_time=start_time,
+                end_time=end_time,
+            )
 
-                if 'metric' in item and 'value' in item:
-                    metric = item['metric']
-                    value = float(item['value'][1])  # value is [timestamp, value]
+            logger.info(f"Range query returned {len(result)} time series")
 
-                    questions_data.append({
-                        'question_id': metric.get('question_id', 'N/A'),
-                        'question_text': metric.get('question_text', 'N/A'),
+            # Aggregate data by metric labels
+            aggregated_data = {}
+            for metric_data in result:
+                metric = metric_data['metric']
+                question_id = metric.get('question_id')
+                question_text = metric.get('question_text')
+
+                if not question_id or not question_text:
+                    continue
+
+                key = f"{question_id}:{question_text}"
+
+                if key not in aggregated_data:
+                    aggregated_data[key] = {
+                        'question_id': question_id,
+                        'question_text': question_text,
                         'modality': metric.get('modality', 'N/A'),
                         'submodality': metric.get('submodality', 'N/A'),
                         'category': metric.get('category', 'N/A'),
-                        'count': value
-                    })
-                else:
-                    logger.error(f"Unexpected detailed item structure: {item}")
+                        'count': 0
+                    }
 
-            # Sort by count descending
+                # Use only the last value in the time series (latest count)
+                if metric_data['values']:
+                    try:
+                        # Get the last (most recent) value
+                        last_value = metric_data['values'][-1]
+                        aggregated_data[key]['count'] = float(last_value[1])
+                    except (ValueError, IndexError) as e:
+                        logger.warning(f"Error parsing last value from time series: {e}")
+                        continue
+
+            # Convert to list and sort by count descending
+            questions_data = list(aggregated_data.values())
             sorted_questions = sorted(
                 questions_data,
                 key=lambda x: x['count'],

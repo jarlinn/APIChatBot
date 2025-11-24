@@ -19,7 +19,7 @@ class ReportService:
 
     async def generate_frequent_questions_report(
         self,
-        days: int = 7,
+        days: int = 15,
         include_category_chart: bool = True,
         include_modality_chart: bool = True,
         include_submodality_chart: bool = True
@@ -96,7 +96,7 @@ class ReportService:
             logger.error(f"Error generating frequent questions report: {str(e)}")
             raise
 
-    async def get_report_metadata(self, days: int = 7) -> Dict[str, Any]:
+    async def get_report_metadata(self, days: int = 15) -> Dict[str, Any]:
         """
         Get metadata about the report without generating the full PDF
 

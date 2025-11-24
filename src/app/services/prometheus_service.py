@@ -69,7 +69,7 @@ class PrometheusService:
             logger.error(f"Full traceback: {traceback.format_exc()}")
             return []
 
-    async def get_frequent_questions_detailed(self, days: int = 7) -> List[Dict[str, Any]]:
+    async def get_frequent_questions_detailed(self, days: int = 15) -> List[Dict[str, Any]]:
         """
         Get detailed frequent questions data including modality, submodality, category
         using range queries to get all historical data
@@ -121,12 +121,12 @@ class PrometheusService:
                         'count': 0
                     }
 
-                # Use only the last value in the time series (latest count)
+                # Sum the last value from each time series for the same question
                 if metric_data['values']:
                     try:
                         # Get the last (most recent) value
                         last_value = metric_data['values'][-1]
-                        aggregated_data[key]['count'] = float(last_value[1])
+                        aggregated_data[key]['count'] += float(last_value[1])
                     except (ValueError, IndexError) as e:
                         logger.warning(f"Error parsing last value from time series: {e}")
                         continue
